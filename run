@@ -1,0 +1,36 @@
+#!/bin/python -W ignore
+from src.scrapers.nhtsa import scrape_nhtsa, make_nhtsa_table
+from src.scrapers.fueleconomy import make_fueleconomy_table, populate_fueleconomy_table
+from src.scrapers.truecar import run_scraper
+from src.analysis import *
+
+import sqlite3 as sql
+import pandas as pd
+
+from src.util import CAR_DB
+
+if __name__ == "__main__":
+    run_scraper(gas=False, min_mileage=100, max_mileage=70000, year_low=2012)
+    # run_scraper()
+    # load_listings()
+    # add_short_vin()
+
+    # make_nhtsa_table()
+    # scrape_nhtsa()
+
+    # make_fueleconomy_table()
+    # populate_fueleconomy_table()
+
+    # show_pairplot()
+    # inspect_nhtsa()
+
+    # with sql.connect(CAR_DB) as conn:
+    #     test = pd.read_sql_query(
+    #         """
+    #         SELECT * FROM nhtsa_attributes_2
+    #         WHERE nhtsa_id = 'nh_19D37BF044AAFFC9'
+    #         """,
+    #         conn
+    #     )
+
+    # print(test.iloc[0].dtypes)
