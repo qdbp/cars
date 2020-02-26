@@ -1,0 +1,13 @@
+seaborn
+cython
+
+click
+tqdm
+
+matplotlib
+scikit-learn
+numpy
+webcolors
+pandas
+
+aiohttp[speedups]
