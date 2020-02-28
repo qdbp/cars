@@ -13,6 +13,10 @@ def tsvfile(s: str) -> str:
     return f"{DATA_DIR}/{s}.tsv"
 
 
+def csvfile(s: str) -> str:
+    return f"{DATA_DIR}/{s}.csv"
+
+
 def jsonfile(s: str) -> str:
     return f"{DATA_DIR}/{s}.json"
 
@@ -25,7 +29,7 @@ def sqlfile(s: str) -> str:
     return f"{DATA_DIR}/{s}.db"
 
 
-CAR_DB = sqlfile('truecar')
+CAR_DB = sqlfile("truecar")
 
 
 def try_convert(v):

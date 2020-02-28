@@ -1,17 +1,18 @@
 #!/bin/python -W ignore
-from src.scrapers.nhtsa import scrape_nhtsa, make_nhtsa_table
-from src.scrapers.fueleconomy import make_fueleconomy_table, populate_fueleconomy_table
-from src.scrapers.truecar import run_scraper
-from src.analysis import *
-
 import sqlite3 as sql
+
 import pandas as pd
 
+from src.analysis import *
+from src.scrapers.fueleconomy import (make_fueleconomy_table,
+                                      populate_fueleconomy_table)
+from src.scrapers.nhtsa import make_nhtsa_table, scrape_nhtsa
+from src.scrapers.truecar import run_scraper
 from src.util import CAR_DB
 
 if __name__ == "__main__":
-    run_scraper(gas=False, min_mileage=100, max_mileage=70000, year_low=2012)
-    # run_scraper()
+    # run_scraper(gas=False, min_mileage=100, max_mileage=700000, year_low=2012)
+    run_scraper()
     # load_listings()
     # add_short_vin()
 
