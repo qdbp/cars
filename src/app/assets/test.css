@@ -1,0 +1,88 @@
+body {
+    margin: 2% 2% 5% 5%;
+}
+
+#_sk_div_root {
+    height: 100%;
+    width: 100%;
+}
+
+/* top row */
+
+#_sk_div_slider_box {
+    width: 30%; /* 30 */
+    height: 50%;
+}
+
+#_sk_div_loc_picker_box {
+    width: 50%; /* 80 */
+    height: 50%;
+    left: 30%;
+    top: 0;
+}
+
+#_sk_div_reserved_box {
+    width: 20%; /* 100 */
+    height: 50%;
+    right: 0;
+    top: 0;
+}
+
+/* bottom row */
+
+#_sk_div_mm_box {
+    width: 30%;
+    height: 50%;
+    bottom: 0;
+    left: 0;
+}
+
+#_sk_div_scatter_box {
+    width: 50%;
+    height: 50%;
+    bottom: 0;
+    left: 30%;
+}
+
+#_sk_div_info_box {
+    width: 20%;
+    height: 50%;
+    bottom: 0;
+    left: 80%;
+}
+
+.sk_div {
+    position: absolute;
+}
+
+.slider_box {
+    width: 20%;
+    height: 100%;
+    position: relative;
+    display: inline-block;
+}
+
+.slider_icon {
+    height: 5%;
+    width: 28%;
+    top: 0;
+    display: inline-block;
+    text-align: center;
+}
+
+.slider {
+    position: absolute;
+    height: 98%;
+    width: 100%;
+    bottom: 0;
+}
+
+.info_box {
+    width: 90%;
+    display: inline-block;
+    position: relative;
+}
+
+.hidden {
+    display: none;
+}

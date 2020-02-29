@@ -1,362 +1,101 @@
-import sqlite3 as sql
-import time
-from datetime import timedelta
-
-import dash
-import dash.dependencies as dd
-import dash_bootstrap_components as dbc
-import dash_core_components as dcc
-import dash_html_components as html
-import geopy.distance as gd
 import numpy as np
 import pandas as pd
-import plotly.express as px
 import plotly.io
-import reverse_geocoder as rg
 import scipy.spatial as sss
-from shapely.geometry.polygon import Polygon
-from shapely.geometry.point import Point
-import plotly.graph_objects as go
-
-from src.util import CAR_DB, csvfile
 
 plotly.io.renderers.default = "chromium"
 
 
-def load_recent_listings_and_dealerships(
-    min_price: float = 0.0,
-    max_price: float = 1e9,
-    min_mileage: int = 0,
-    max_mileage: int = 1000000,
-    min_mpg: float = 1.0,
-    max_mpg: float = 1e3,
+def find_pareto_points(
+    points: np.ndarray, n_peel: int = 3, eliminate_dominated=True
 ):
-    conn = sql.Connection(CAR_DB)
-    cutoff = time.time() - timedelta(days=7).total_seconds()
+    """
+    Uses a multi-peel pareto front approximation algorithm. The pareto points
+    are approximated by the vertices of [n_peel] successive steps of
+    convex hull onion peeling, restricted to vertices pointing toward the ideal
+    point.
 
-    listings = pd.read_sql_query(
-        f"""
-        SELECT
-            ta.vin, mileage,
-            (price_listing + price_fees) AS price,
-            ta.year, ta.make, ta.model, ta.trim,
-            (0.45 * ta.mpg_hwy + 0.55 * ta.mpg_city) AS mpg,
-            td.pos_lat AS lat,  td.pos_lon as lon,
-            tl.dealer_id, td.name AS dealer_name
-        FROM truecar_listings tl
-        JOIN (
-            SELECT vin, MAX(timestamp) latest
-            FROM truecar_listings
-            WHERE timestamp > {cutoff}
-            AND mileage >= {min_mileage}
-            AND mileage <= {max_mileage}
-            GROUP BY vin
-        ) AS tf
-        ON tl.vin = tf.vin AND tl.timestamp = tf.latest
-        JOIN truecar_attrs ta ON tl.vin = ta.vin
-        JOIN truecar_dealerships td on tl.dealer_id = td.dealer_id
-        WHERE mpg >= {min_mpg}
-        AND mpg <= {max_mpg}
-        AND price >= {min_price}
-        AND price <= {max_price}
-        """,
-        conn,
-    )
+    By convention, the optimality point is ∞ * (-1, -1, ..., -1); i.e. the
+    individual objectives are minimization problems.
 
-    all_dealerships = pd.read_sql_query(
-        f"""
-        SELECT * FROM truecar_dealerships
-        """,
-        conn,
-    ).set_index("dealer_id")
+    Args:
+        points: (n, k) array of n points of k dimensions.
+            The convention is that the
+        n_peel: number of onion peeling passes to perform
+        eliminate_dominated: if true, dominated points will be deterministically
+            eliminated from the heuristic set returned by the convex hull.
+            Worst case running time is O(#(points in c. hull set)^2)
 
-    dealerships = all_dealerships.join(
-        listings["dealer_id"].drop_duplicates(), how="inner"
-    )
+    Returns:
+        indices into [points] of the approximate pareto set
 
-    conn.close()
+    """
 
-    return listings  # , dealerships
+    n, k = points.shape
 
+    # specialcase some stupid inputs
+    if n == 0:
+        return np.array([], dtype=np.uint64)
 
-def filter_listings_by_distance(
-    listings: pd.DataFrame, max_miles: int, lat: float, lon: float
-):
-    def dist(xy_arr) -> float:
-        return gd.geodesic(xy_arr, (lat, lon)).mi
+    # specialcased for normalization (see below) to work
+    elif n == 1:
+        return np.array([0], dtype=np.uint64)
 
-    distances = listings[["lat", "lon"]].apply(dist, raw=True, axis=1)
+    elif k == 0:
+        raise ValueError("No pareto-optimal set of points with no features")
 
-    return listings[distances < max_miles]
+    # we normalize our point sets
+    points = (points - points.mean(axis=0)) / points.std(axis=0)
 
+    # for finding qhull faces pointing toward optimality
+    test_vector = np.zeros(k + 1)
+    test_vector[:-1] = -1
 
-def filter_listings_by_state(listings: pd.DataFrame, states: str):
+    # vertices in the candidate pareto set
+    vertex_mask = np.zeros(len(points), dtype=bool)
 
-    rcoded = rg.search(tuple(listings[["lat", "lon"]].itertuples(index=False)))
-    mask = [rc["admin1"] in states for rc in rcoded]
-    return listings[mask]
+    for layer in range(n_peel):
+
+        # construct hull of all vertices NOT already in the set
+        qhull = sss.ConvexHull(points[~vertex_mask])
+        pareto_side = np.where((qhull.equations @ test_vector) > 0)
+        pareto_vertices = np.unique(qhull.simplices[pareto_side].ravel())
+        vertex_mask[pareto_vertices] = True
+
+    # list of indices into points in the candidate set of dominator points
+    pareto_vertices = np.where(vertex_mask)[0]
+
+    if eliminate_dominated:
+        # estimate goodness as the total score
+        # NB. this is where it helps to be normalized
+        goodness_order = np.argsort(points[pareto_vertices].sum(axis=1))
+
+        # from the most promising dominator
+        for dominator_ix in goodness_order:
+            # and the most promising dominated
+            for dominated_ix in goodness_order[::-1]:
+                if np.all(points[dominator_ix] > points[dominated_ix]):
+                    # mark that vertex as dominated
+                    pareto_vertices[dominated_ix] = -1
+                    break
+
+    return pareto_vertices[pareto_vertices >= 0]
 
 
 def calculate_listing_pareto_front(
-    listings: pd.DataFrame, max_miles: int = 150
+    listings: pd.DataFrame, max_miles: int = 150, **pareto_kwargs,
 ):
 
-    # FIXME this is an approximation -- can we do it for realsies?
-
-    # invert "good" attributes for lexsort to be consistent -> smaller dominates
+    # invert "good" attributes to conform to minimization problem
     listings["inv_mpg"] = 1 / listings["mpg"]
     listings["inv_year"] = 1 / listings["year"]
 
-    points = listings[["mileage", "price", "inv_year", "inv_mpg"]].dropna()
-    points = (points - points.mean(axis=0)) / points.std(axis=0)
+    points = (
+        listings[["mileage", "price", "inv_year", "inv_mpg"]].dropna().values
+    )
 
-    qhull = sss.ConvexHull(points)
-
-    eqs = qhull.equations
-    pareto_side = np.where(eqs @ np.array([-1, -1, -1, -1, 0]) > 0.25)
-
-    pareto_vertices = np.unique(qhull.simplices[pareto_side].ravel())
+    pareto_vertices = find_pareto_points(points, **pareto_kwargs)
 
     listings.drop(["inv_mpg", "inv_year"], axis=1, inplace=True)
+
     return listings.iloc[pareto_vertices]
-
-
-def setup_dash_layout(all_listings: pd.DataFrame,) -> dash.Dash:
-
-    graph = dcc.Graph(
-        id="scatter-price-mileage", config=dict(displayModeBar=False)
-    )
-
-    year_slider = dcc.RangeSlider(
-        "cars-year-slider",
-        min=(mn := all_listings["year"].min()),
-        max=(mx := all_listings["year"].max()),
-        value=[2012, 2018],
-        marks={y: str(y) for y in range(mn, mx + 1)},
-        vertical=True,
-    )
-
-    mileage_slider = dcc.RangeSlider(
-        "cars-mileage-slider",
-        min=(mn := all_listings["mileage"].min()),
-        max=(mx := all_listings["mileage"].max()),
-        value=[10000, 70000],
-        marks={y: f"{y//1000}k" for y in range(0, mx, 25000)},
-        step=1,
-        vertical=True,
-    )
-
-    price_slider = dcc.RangeSlider(
-        "cars-price-slider",
-        min=(mn := all_listings["price"].min()),
-        max=(mx := all_listings["price"].max()),
-        value=[10000, 35000],
-        marks={int(y): f"{y//1000}k" for y in range(0, int(mx) + 5000, 5000)},
-        step=1,
-        vertical=True,
-    )
-
-    mpg_slider = dcc.RangeSlider(
-        "cars-mpg-slider",
-        min=(mn := all_listings["mpg"].min()),
-        max=(mx := all_listings["mpg"].max()),
-        value=[20, mx],
-        marks={int(y): f"{y:.0f}" for y in range(10, int(mx) + 1, 10)},
-        step=1,
-        vertical=True,
-    )
-
-    # cities = pd.read_csv(csvfile('2014_us_cities')).iloc[:1000]
-    dealerships = all_listings[~all_listings["dealer_id"].duplicated()]
-
-    geo_plot = px.scatter_geo(
-        dealerships,
-        lat="lat",
-        lon="lon",
-        text="dealer_name",
-        height=500,
-        scope="usa",
-        locationmode="USA-states",
-    )
-    geo_plot.update_layout(
-        margin=dict(l=0, r=0, b=0, t=0),
-        clickmode="event+select",
-        mapbox_style="open-street-map",
-    )
-
-    loc_picker = dcc.Graph(
-        "cars-loc-picker",
-        figure=geo_plot,
-        config={"modeBarButtonsToRemove": ["hoverClosestGeo", "toImage"]}
-        # config=dict(displayModeBar=False),
-    )
-
-    app = dash.Dash(
-        "cars, cars, cars!", external_stylesheets=[dbc.themes.BOOTSTRAP]
-    )
-
-    input_content = dbc.Row(
-        [
-            dbc.Col(
-                [html.P("💰", style=dict(margin=0)), price_slider],
-                width=1,
-                style={"text-align": "center"},
-            ),
-            dbc.Col(
-                [html.P("📅", style=dict(margin=0)), year_slider],
-                width=1,
-                style={"text-align": "center"},
-            ),
-            dbc.Col(
-                [html.P("🏁️", style=dict(margin=0)), mileage_slider],
-                width=1,
-                style={"text-align": "center"},
-            ),
-            dbc.Col(
-                [html.P("⛽️️", style=dict(margin=0)), mpg_slider],
-                width=1,
-                style={"text-align": "center"},
-            ),
-            dbc.Col(
-                [html.P("📍 ️️", style=dict(margin=0)), loc_picker],
-                width=8,
-                style={"text-align": "center"},
-            ),
-        ]
-    )
-    output_content = dbc.Row(
-        [
-            dbc.Col(graph, width=9),
-            dbc.Col(
-                dbc.Alert(id="output-link", style={"text-align": "center"}),
-                width=3,
-            ),
-        ]
-    )
-
-    app.layout = dbc.Container([input_content, output_content])
-
-    return app
-
-
-def plot_listings(listings):
-
-    plt = go.Figure(
-        go.Scatter(
-            x=listings["mileage"],
-            y=listings["price"],
-            customdata=listings[
-                ["vin", "make", "model", "trim", "mpg", "dealer_name"]
-            ],
-            hovertemplate="<b>%{customdata}</b>",
-            text=listings["year"] % 100,
-            marker={"color": listings["mpg"], "colorbar": dict(title="mpg"),},
-            mode="markers+text",
-            # hover_data=["mpg", "year", "make", "model", "trim"],
-        ),
-        layout={"height": 430, "clickmode": "event"},
-    )
-
-    return plt
-
-
-def setup_callbacks(
-    app: dash.Dash, listings_universe: pd.DataFrame,
-):
-
-    ###
-    # this callback sets up slider, make and model inputs
-    ###
-    @app.callback(
-        dd.Output("scatter-price-mileage", "figure"),
-        [
-            dd.Input("cars-year-slider", "value"),
-            dd.Input("cars-mileage-slider", "value"),
-            dd.Input("cars-price-slider", "value"),
-            dd.Input("cars-mpg-slider", "value"),
-            dd.Input("cars-loc-picker", "selectedData"),
-        ],
-    )
-    def generate_filtered_graph(
-        year_limits, mileage_limits, price_limits, mpg_limits, selected
-    ):
-
-        listings = listings_universe.copy()
-
-        for col, range_limit in {
-            "year": year_limits,
-            "mileage": mileage_limits,
-            "price": price_limits,
-            "mpg": mpg_limits,
-        }.items():
-
-            mn, mx = sorted(range_limit)
-            listings = listings[
-                (mn <= listings_universe[col]) & (listings_universe[col] <= mx)
-            ]
-
-        if selected is not None and "lassoPoints" in selected:
-            poly = Polygon(selected["lassoPoints"]["geo"])
-
-            def contained_in_poly(xy_raw):
-                p = Point(xy_raw)
-                return p.within(poly)
-
-            mask = listings[["lon", "lat"]].apply(
-                contained_in_poly, raw=True, axis=1
-            )
-            listings = listings[mask]
-
-        listings = calculate_listing_pareto_front(listings)
-
-        return plot_listings(listings)
-
-    @app.callback(
-        dd.Output("output-link", "children"),
-        [dd.Input("scatter-price-mileage", "clickData")],
-    )
-    def fill_in_link(click_data) -> str:
-        if click_data is not None:
-            data = click_data["points"][0]["customdata"]
-            vin, make, model, trim, *_ = data
-
-            return html.A(
-                f"{make} {model} [{vin}] on Truecar",
-                href=f"https://www.truecar.com/used-cars-for-sale/listing/{vin}/",
-            )
-        else:
-            return "Click a point on the graph to see the purchase link."
-
-
-def prefilter_listings(listings):
-    """
-    Eliminate obvious garbage listings.
-
-    Args:
-        listings:
-
-    Returns:
-
-    """
-
-    listings = listings[listings["mpg"] > 0]
-    listings = listings[listings["price"] <= 100000]
-    return listings
-
-
-def run_server(app: dash.Dash):
-    app.run_server(debug=True)
-
-
-def main():
-
-    listings = load_recent_listings_and_dealerships()
-    listings = prefilter_listings(listings)
-
-    app = setup_dash_layout(listings)
-    setup_callbacks(app, listings)
-    run_server(app)
-
-
-if __name__ == "__main__":
-    main()
