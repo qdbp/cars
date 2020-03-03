@@ -18,7 +18,6 @@ def load_recent_listings_and_dealerships(
     max_mpg: float = 1e3,
 ):
     conn = sql.Connection(CAR_DB)
-    cutoff = time.time() - timedelta(days=7).total_seconds()
 
     listings = pd.read_sql_query(
         f"""
@@ -27,42 +26,27 @@ def load_recent_listings_and_dealerships(
             (price_listing + price_fees) AS price,
             ta.year, ta.make, ta.model, ta.trim,
             (0.45 * ta.mpg_hwy + 0.55 * ta.mpg_city) AS mpg,
-            td.pos_lat AS lat,  td.pos_lon as lon,
-            tl.dealer_id, td.name AS dealer_name
-        FROM truecar_listings tl
-        JOIN (
-            SELECT vin, MAX(timestamp) latest
-            FROM truecar_listings
-            WHERE timestamp > {cutoff}
-            AND mileage >= {min_mileage}
-            AND mileage <= {max_mileage}
-            GROUP BY vin
-        ) AS tf
-        ON tl.vin = tf.vin AND tl.timestamp = tf.latest
+            ta.fuel_type,
+            td.pos_lat AS lat, td.pos_lon as lon,
+            tl.dealer_id, td.name AS dealer_name,
+            ('#' || ta.color_rgb) as color_hex
+        FROM truecar_listings_snapshot tl
         JOIN truecar_attrs ta ON tl.vin = ta.vin
         JOIN truecar_dealerships td on tl.dealer_id = td.dealer_id
         WHERE mpg >= {min_mpg}
         AND mpg <= {max_mpg}
-        AND price >= {min_price}
-        AND price <= {max_price}
+        AND year >= 1900
+        AND mileage >= {min_mileage}
+        AND mileage <= {max_mileage}
+        AND (price_fees + price_listing) >= {min_price}
+        AND (price_fees + price_listing) <= {max_price}
         """,
         conn,
-    )
-
-    all_dealerships = pd.read_sql_query(
-        f"""
-        SELECT * FROM truecar_dealerships
-        """,
-        conn,
-    ).set_index("dealer_id")
-
-    dealerships = all_dealerships.join(
-        listings["dealer_id"].drop_duplicates(), how="inner"
     )
 
     conn.close()
 
-    return listings  # , dealerships
+    return listings
 
 
 def filter_listings_by_distance(

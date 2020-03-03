@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import plotly.io
 import scipy.spatial as sss
+from scipy.spatial.qhull import QhullError
 
 plotly.io.renderers.default = "chromium"
 
@@ -57,7 +58,11 @@ def find_pareto_points(
     for layer in range(n_peel):
 
         # construct hull of all vertices NOT already in the set
-        qhull = sss.ConvexHull(points[~vertex_mask])
+        try:
+            qhull = sss.ConvexHull(points[~vertex_mask])
+        except (QhullError, ValueError):
+            break
+
         pareto_side = np.where((qhull.equations @ test_vector) > 0)
         pareto_vertices = np.unique(qhull.simplices[pareto_side].ravel())
         vertex_mask[pareto_vertices] = True
@@ -86,8 +91,12 @@ def calculate_listing_pareto_front(
     listings: pd.DataFrame, max_miles: int = 150, **pareto_kwargs,
 ):
 
+    # otherwise the convex hull is degenerate -> qhull explodes
+    if len(listings) <= 4:
+        return listings
+
     # invert "good" attributes to conform to minimization problem
-    listings["inv_mpg"] = 1 / listings["mpg"]
+    listings["inv_mpg"] = 1 / (listings["mpg"] + 1)
     listings["inv_year"] = 1 / listings["year"]
 
     points = (

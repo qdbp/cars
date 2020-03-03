@@ -1,12 +1,11 @@
-body {
-    margin: 2% 2% 5% 5%;
-}
+/* core styling */
 
 #_sk_div_root {
     height: 100%;
     width: 100%;
 }
 
+/* TOP LEVEL BOXES */
 /* top row */
 
 #_sk_div_slider_box {
@@ -21,35 +20,61 @@ body {
     top: 0;
 }
 
-#_sk_div_reserved_box {
-    width: 20%; /* 100 */
+#loc_picker_box {
+    width: 240px;
+}
+
+#input-zipcode {
+    width: 200px;
+    display: block;
+}
+
+#input-max-distance {
+    width: 200px;
+    display: block;
+}
+
+#_sk_div_info_box {
+    width: 20%;
     height: 50%;
-    right: 0;
     top: 0;
+    right: 0;
+}
+
+#_sk_div_cars-slider-mpg_box {
+    margin-left: 5%;
 }
 
 /* bottom row */
-
-#_sk_div_mm_box {
-    width: 30%;
+#_sk_div_mmt_box {
+    width: 40%;
     height: 50%;
     bottom: 0;
     left: 0;
 }
 
 #_sk_div_scatter_box {
-    width: 50%;
+    width: 60%;
     height: 50%;
     bottom: 0;
-    left: 30%;
+    left: 40%;
 }
 
-#_sk_div_info_box {
-    width: 20%;
-    height: 50%;
-    bottom: 0;
-    left: 80%;
+/* SUBUNITS */
+/* mmt subunits */
+#_sk_div_mm_picker {
+    width: 45%;
+    height: 100%;
+    left: 0;
 }
+
+#_sk_div_mmt_matrix {
+    width: 55%;
+    height: 100%;
+    left: 45%;
+    overflow-y: auto;
+}
+
 
 .sk_div {
     position: absolute;
@@ -77,12 +102,67 @@ body {
     bottom: 0;
 }
 
+.refine_container {
+    width: 98%;
+    margin: 0 1% 0 1%;
+    border: 1px solid #ffdddd;
+    border-radius: 0.3%;
+    max-width: none;
+}
+
+.year-refine {
+    border: 1px solid #ddffdd;
+}
+
+/*
+.year-refine .custom-control {
+    display: inline-block;
+}
+
+.trim-refine .custom-control {
+    display: inline-block;
+}
+ */
+
+.trim-refine {
+    border: 1px solid #ddddff;
+}
+
+.checklist-container-year {
+    float: left;
+    width: 25%;
+    height: 100%;
+    left: 0;
+    top: 0;
+}
+
+.checklist-container-trim {
+    float: right;
+    width: 75%;
+    right: 0;
+    top: 0;
+}
+
+input[type="checkbox"] {
+    margin-left: 30px;
+}
+
 .info_box {
     width: 90%;
+    margin-right: 5%;
+    margin-left: 5%;
     display: inline-block;
     position: relative;
 }
 
 .hidden {
     display: none;
+}
+
+
+/* frills styling */
+#_sk_div_root > div {
+    border: 1px solid #eeeeee;
+    border-radius: 0.3%;
+    padding: 3px;
 }
