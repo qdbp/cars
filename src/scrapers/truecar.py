@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import grequests as grq
 
 import json
@@ -88,6 +90,8 @@ def get_listings_shard_sqlite(
 
     params.append(("page", page))
 
+    seen_vins = []
+
     while True:
 
         url = f"{base_url}?{urlencode(params)}"
@@ -107,6 +111,7 @@ def get_listings_shard_sqlite(
             pricing = listing["pricing"]
 
             vin = vehicle["vin"]
+            seen_vins.append(vin)
 
             if vehicle["mpg_highway"] is None or vehicle["mpg_city"] is None:
                 continue
@@ -116,6 +121,8 @@ def get_listings_shard_sqlite(
                 dealership["name"],
                 dealership["location"]["lat"],
                 dealership["location"]["lng"],
+                dealership["location"]["city"],
+                dealership["location"]["state"],
             ]
 
             attributes[vin] = [
@@ -146,7 +153,7 @@ def get_listings_shard_sqlite(
             conn.executemany(
                 """
                 INSERT OR REPLACE INTO truecar_dealerships
-                VALUES (?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 dealerships.values(),
             )
@@ -189,7 +196,7 @@ def get_listings_shard_sqlite(
         if seen >= progress.total or n_new_cars == 0:
             break
 
-    return total
+    return total, seen_vins
 
 
 def run_scraper(**filter_kwargs):
@@ -223,18 +230,22 @@ def run_scraper(**filter_kwargs):
         total=0, unit="cars", desc="shard", leave=True, position=1
     )
 
+    # scrape new vins
+    seen_vins = []
     while True:
 
         max_mileage = min(start_mileage + mileage_delta, mileage_cap)
 
-        total = get_listings_shard_sqlite(
+        total, shard_vins = get_listings_shard_sqlite(
             conn,
             min_mileage=start_mileage,
             max_mileage=max_mileage,
             **filter_kwargs,
             progress=inner_progress,
         )
+
         progress.update(mileage_delta)
+        seen_vins.extend(shard_vins)
 
         # mileage_delta < 5 is bugged on the server side
         start_mileage += mileage_delta
@@ -245,6 +256,21 @@ def run_scraper(**filter_kwargs):
 
         if max_mileage == mileage_cap:
             break
+
+    # TODO validate
+    os.unlink(TRUECAR_SCRAPER_STATE)
+    if len(filter_kwargs) == 0:
+        with conn:
+            all_vins = {
+                vin
+                for (vin,) in conn.executemany(
+                    "SELECT vin from truecar_listings_snapshot"
+                ).fetchall()
+            }
+            bad_vins = all_vins - seen_vins
+            conn.executemany(
+                "DELETE FROM truecar_listings_snapshot WHERE vin = ?", bad_vins
+            )
 
 
 def run_deleter(block_size=100):
@@ -274,18 +300,20 @@ def run_deleter(block_size=100):
 
         block_vins = [
             vin
-            for (vin,) in vins[
-                block * block_size : (block + 1) * block_size
-            ]
+            for (vin,) in vins[block * block_size : (block + 1) * block_size]
         ]
 
         responses = grq.map(
-            [grq.head(URL_LISTING.format(vin)) for vin in block_vins])
+            [grq.head(URL_LISTING.format(vin)) for vin in block_vins]
+        )
 
-        to_delete.extend([
-            vin for (vin, resp) in zip (block_vins, responses)
-            if resp.status_code == 404
-        ])
+        to_delete.extend(
+            [
+                vin
+                for (vin, resp) in zip(block_vins, responses)
+                if resp.status_code == 404
+            ]
+        )
 
         if len(to_delete) > 100:
             flush()
@@ -293,4 +321,4 @@ def run_deleter(block_size=100):
     else:
         flush()
 
-    print(f'Deleted {deleted} bad vins.')
+    print(f"Deleted {deleted} bad vins.")

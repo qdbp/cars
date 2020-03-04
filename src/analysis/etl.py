@@ -29,6 +29,7 @@ def load_recent_listings_and_dealerships(
             ta.fuel_type,
             td.pos_lat AS lat, td.pos_lon as lon,
             tl.dealer_id, td.name AS dealer_name,
+            td.pos_state as dealer_state,
             ('#' || ta.color_rgb) as color_hex
         FROM truecar_listings_snapshot tl
         JOIN truecar_attrs ta ON tl.vin = ta.vin

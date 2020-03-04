@@ -14,7 +14,7 @@ from numba import jit
 from plotly import graph_objects as go
 
 from src.analysis.etl import load_recent_listings_and_dealerships
-from src.analysis.geo import great_circle_miles
+from src.analysis.geo import great_circle_miles, LATLONG_BY_ZIP
 from src.analysis.pareto_front import calculate_listing_pareto_front
 
 SLIDER_MPG_ID = "cars-slider-mpg"
@@ -33,6 +33,7 @@ MMT_MATRIX_ID = "mmt_matrix"
 
 SCATTER_ID = "scatter_box"
 LOC_PICKER_ID = "loc_picker_box"
+LOC_STATE_ID = "loc_state_box"
 
 INFO_A_ID = "cars-info-a"
 INFO_B_ID = "cars-info-b"
@@ -40,6 +41,10 @@ INFO_C_ID = "cars-info-c"
 INFO_D_ID = "cars-info-d"
 
 CACHED_DATA = "cached-data"
+
+
+ERR_BAD_ZIP = "bad_zip"
+ERR_NO_ZIP = "err_no_zip"
 
 
 def concat_mmt_label(mmt_arr: np.ndarray) -> str:
@@ -52,11 +57,9 @@ class DivSkeleton(Dict[str, html.Div]):
     interactive input or output component.
     """
 
-    def fill(self, key: str, object):
-        # this check has saved a LOT of time. don't doubt defensive programming
-        # especially in string-stew frontend code
+    def fill(self, key: str, children):
         if len(self[key].children) == 0:
-            self[key].children = object
+            self[key].children = children
         else:
             print(self[key].children)
             raise ValueError(f"Container {key} already filled")
@@ -77,7 +80,7 @@ def create_div_skeleton() -> DivSkeleton:
     # |              |                                  |            |
     # |              |                                  |            |
     # |   sliders    |         location                 |  info      |
-    # |              |           map                    |            |
+    # |              |           picker                 |            |
     # |              |                                  |            |
     # |              |                                  |            |
     # |              |                                  |            |
@@ -151,7 +154,9 @@ def create_div_skeleton() -> DivSkeleton:
 
     sliders_box = D("slider_box", *sliders)
 
-    loc_picker_box = D(LOC_PICKER_ID)
+    loc_picker_box = D(
+        "loc_picker_container", D(LOC_PICKER_ID), D(LOC_STATE_ID),
+    )
 
     mmt_box = D("mmt_box", D(MMT_MM_PICKER_ID), D(MMT_MATRIX_ID),)
 
@@ -264,55 +269,61 @@ def setup_dash_layout(all_listings: pd.DataFrame, sk: DivSkeleton) -> dash.Dash:
 
     ### SCATTER
     scatter_graph = html.Div(id="scatter_box")
-
     sk.fill(SCATTER_ID, scatter_graph)
 
-    loc_picker = html.Div(
-        id="loc_picker_box",
-        children=[
-            dbc.Alert(
-                "Select your location to see cars.",
-                id="alert-map",
-                color="primary",
-                style={"text-align": "center"},
-            ),
-            dbc.InputGroup(
-                id="zip_picker_box",
-                children=[
-                    dbc.InputGroupAddon("📍"),
-                    dcc.Input(
-                        id="input-zipcode",
-                        # options=[
-                        #     {"label": (code := z["zip_code"]), "value": code}
-                        #     for z in zp.list_all()
-                        #     if z["zip_code_type"] == "STANDARD"
-                        # ],
-                        placeholder="Zip code",
-                        # searchable=False,
-                        # clearable=False,
-                        # list = [z['zip_code']  for z in zp.list_all() if z['zip_code_type'] == 'STANDARD'],
-                        persistence=True,
-                        persistence_type="session",
-                    ),
-                ],
-            ),
-            dbc.InputGroup(
-                id="dist_picker_box",
-                children=[
-                    dbc.InputGroupAddon("↔"),
-                    dcc.Input(
-                        id="input-max-distance",
-                        placeholder="Maximum distance, miles",
-                        type="number",
-                        persistence=True,
-                        persistence_type="session",
-                        debounce=True,
-                    ),
-                ],
-            ),
-        ],
-    )
+    loc_picker = [
+        dbc.Alert(
+            "Select your location.",
+            id="alert-loc-picker",
+            color="primary",
+            style={"text-align": "center"},
+        ),
+        dbc.InputGroup(
+            id="zip_picker_box",
+            children=[
+                dbc.InputGroupAddon("📍"),
+                dcc.Input(
+                    id="input-zipcode",
+                    placeholder="Zip code",
+                    persistence=True,
+                    persistence_type="session",
+                ),
+            ],
+        ),
+        dbc.InputGroup(
+            id="dist_picker_box",
+            children=[
+                dbc.InputGroupAddon("↔"),
+                dcc.Input(
+                    id="input-max-distance",
+                    placeholder="Maximum distance, miles",
+                    type="number",
+                    persistence=True,
+                    persistence_type="session",
+                    debounce=True,
+                ),
+            ],
+        ),
+    ]
 
+    state_picker = [
+        html.Hr(),
+        dbc.Alert(
+            "Limit dealership states.",
+            id="alert-state-picker",
+            color="primary",
+            style={"text-align": "center"},
+        ),
+        dcc.Dropdown(
+            id="input-state-picker",
+            # options by callback
+            multi=True,
+            persistence=True,
+            persistence_type="session",
+        ),
+    ]
+
+    sk.fill(LOC_STATE_ID, state_picker)
     sk.fill(LOC_PICKER_ID, loc_picker)
 
     ### MMT refinement
@@ -322,7 +333,7 @@ def setup_dash_layout(all_listings: pd.DataFrame, sk: DivSkeleton) -> dash.Dash:
         # options by callback
         multi=True,
         placeholder="Select makes",
-        persistence=False,
+        persistence=True,
         persistence_type="session",
         clearable=False,
     )
@@ -348,8 +359,8 @@ def setup_dash_layout(all_listings: pd.DataFrame, sk: DivSkeleton) -> dash.Dash:
     sk.fill(INFO_A_ID, alert_link)
 
     ### CACHES
-    lasso_cache = html.Div(id="cache-lasso")
-    sk.fill(CACHED_DATA, [lasso_cache])
+    dealership_cache = html.Div(id="cache-dealerships")
+    sk.fill(CACHED_DATA, [dealership_cache])
 
     app.layout = sk["root"]
     return app
@@ -370,36 +381,33 @@ def plot_listings(listings):
                     "mpg",
                     "dealer_name",
                     "distance",
+                    "year",
                 ]
             ],
             hovertemplate=(
                 "<i>%{customdata[0]}</i><br>"
+                '<b style="font-size:16">%{customdata[7]}</b><br>'
                 "<b>%{customdata[1]} %{customdata[2]} %{customdata[3]}</b><br>"
                 "Dealer: %{customdata[5]}<br>"
                 "<b>About %{customdata[6]:.0f} miles from you.</b>"
             ),
-            text=listings["year"] % 100,
-            textposition="bottom center",
             marker={
-                "color": listings["mpg"],
-                "colorbar": {"title": "mpg",},
+                "color": listings["color_hex"].apply(lambda x: x or "#000000"),
+                "opacity": 1
+                - 0.75
+                * listings["color_hex"].apply(lambda x: x is None).astype(int),
                 "size": 10,
-                "cmin": 20,
-                "cmax": 50,
                 "line": {
-                    "color": listings["color_hex"].apply(
-                        lambda x: x or "#000000"
-                    ),
-                    # no line if color is unknown, 3 otherwise
-                    "width": 3
-                    * listings["color_hex"]
-                    .apply(lambda x: x is not None)
-                    .astype(int),
+                    # "color": listings["color_hex"].apply(
+                    #     lambda x: x or "#000000"
+                    # ),
+                    "width": 0,
                 },
             },
             mode="markers+text",
         ),
         layout={
+            "title": "Available Cars",
             "height": 430,
             "clickmode": "event",
             "xaxis": {"title": "Mileage, mi",},
@@ -434,6 +442,10 @@ def setup_data_callbacks(
         listings_universe: the dataframe of all listings accessible to the app
 
     """
+
+    dealerships_universe = listings_universe[
+        ~listings_universe["dealer_id"].duplicated()
+    ][["dealer_id", "lat", "lon", "dealer_state"]].set_index("dealer_id")
 
     slider_inputs = {
         "year": dd.Input("input-year", "value"),
@@ -516,7 +528,16 @@ def setup_data_callbacks(
             if check_mm_in_mpg_bounds(make, model, *mpg_range)
         ]
 
-    # FIXME test
+    def mk_year_refine_callback_id(make, model):
+        return f'input-mmty-refine-year|{make};{model}'
+    
+    def mk_trim_refine_callback_id(make, model):
+        return f'input-mmty-refine-trim|{make};{model}'
+
+    ###
+    # this callback creates year and trim refinement cards for the selected
+    # makes and models
+    ###
     @app.callback(
         dd.Output("_sk_div_mmt_matrix", "children"),
         [
@@ -587,7 +608,7 @@ def setup_data_callbacks(
                 ),
                 value=[opt["value"] for opt in opts],
                 persistence=True,
-                persistence_type="memory",
+                persistence_type="session",
                 inputClassName="year-refine-input",
                 labelClassName="year-refine-label",
                 className="year-refine",
@@ -603,7 +624,7 @@ def setup_data_callbacks(
                 ),
                 value=[opt["value"] for opt in opts],
                 persistence=True,
-                persistence_type="memory",
+                persistence_type="session",
                 inputClassName="trim-refine-input",
                 labelClassName="trim-refine-label",
                 className="trim-refine",
@@ -617,40 +638,69 @@ def setup_data_callbacks(
 
         return out
 
-    latlong_by_zip = {
-        z["zip_code"]: (float(z["lat"]), float(z["long"]))
-        for z in zp.list_all()
-        if z["zip_code_type"] == "STANDARD"
-    }
-
     @jit
     def metric(dealer_latlong: np.ndarray, lat: float, long: float) -> float:
-        print(dealer_latlong, lat, long)
         out = great_circle_miles(
             lat0=dealer_latlong[0], lon0=dealer_latlong[1], lat1=lat, lon1=long
         )
-        print(out)
         return out
 
-    def filter_listings_by_location(listings, zipcode: str, max_miles: float):
+    def filter_dealers_by_location(zipcode: str, max_miles: float):
 
-        lat, long = latlong_by_zip[zipcode]
+        lat, long = LATLONG_BY_ZIP[zipcode]
         this_metric = partial(metric, lat=lat, long=long)
 
-        dealerships = listings[~listings["dealer_id"].duplicated()].copy()
-        dealerships["distance"] = dealerships[["lat", "lon"]].apply(
+        distance = dealerships_universe[["lat", "lon"]].apply(
             this_metric, raw=True, axis=1
         )
+        distance.name = "distance"
 
-        close_dealerships = dealerships[
-            dealerships["distance"] <= max_miles
-        ].set_index("dealer_id")
+        return dealerships_universe[distance <= max_miles].join(distance)
 
-        listings = listings.join(
-            close_dealerships[["distance"]], on="dealer_id", how="inner"
+    ###
+    # this callback stores the valid dealerships
+    ###
+    @app.callback(
+        dd.Output("cache-dealerships", "children"),
+        [
+            dd.Input("input-zipcode", "value"),
+            dd.Input("input-max-distance", "value"),
+        ],
+    )
+    def store_valid_dealerships(zipcode, max_miles):
+
+        if zipcode is None or max_miles is None:
+            return ERR_NO_ZIP
+
+        if (
+            len(it := zp.matching(zipcode)) != 1
+            and it[0]["zip_code_type"] != "STANDARD"
+        ):
+            return ERR_BAD_ZIP
+
+        return filter_dealers_by_location(zipcode, max_miles).to_json()
+
+    ###
+    # this callback generates the state refinement menu
+    ###
+    @app.callback(
+        [
+            dd.Output("input-state-picker", "options"),
+            dd.Output("input-state-picker", "value"),
+        ],
+        [dd.Input("cache-dealerships", "children"),],
+    )
+    def populate_state_options(close_dealers_json: str):
+        close_dealerships = pd.read_json(close_dealers_json)
+        return (
+            (
+                opts := [
+                    {"label": state.upper(), "value": state.upper()}
+                    for state in close_dealerships["dealer_state"].unique()
+                ]
+            ),
+            [opt["value"] for opt in opts],
         )
-
-        return listings
 
     ###
     # this callback filters the scatterplot output based on all relevant inputs
@@ -661,42 +711,66 @@ def setup_data_callbacks(
             slider_inputs["price"],
             slider_inputs["mileage"],
             dd.Input("_sk_div_mmt_matrix", "children"),
-            dd.Input("input-zipcode", "value"),
-            dd.Input("input-max-distance", "value"),
+            dd.Input("input-state-picker", "value"),
         ],
+        [dd.State("cache-dealerships", "children")],
     )
     def generate_filtered_graph(
-        price_limits, mileage_limits, matrix_children, zipcode, max_distance,
+        price_limits,
+        mileage_limits,
+        matrix_children,
+        picked_states,
+        dealers_json,
     ):
 
         listings = listings_universe
 
-        if zipcode is None or max_distance is None:
-            return dbc.Alert(
-                "Please select your location and acceptable distance.",
-                color="warning",
-            )
-
-        if (
-            len(it := zp.matching(zipcode)) != 1
-            and it[0]["zip_code_type"] != "STANDARD"
-        ):
-            return dbc.Alert("Invalid zipcode.", color="danger",)
-
+        # filter by price and mileage
         listings = listings[listings["price"].between(*price_limits)]
         listings = listings[listings["mileage"].between(*mileage_limits)]
 
+        if len(listings) == 0:
+            return dbc.Alert(
+                "There are no cars witin your price and mileage constraints.",
+                color="danger",
+            )
+
+        if dealers_json == ERR_NO_ZIP:
+            return dbc.Alert(
+                "Enter location information to see listings.", color="warning"
+            )
+        elif dealers_json == ERR_BAD_ZIP:
+            return dbc.Alert("Invalid zipcode.", color="danger",)
+
+        elif not dealers_json:
+            return dbc.Spinner(size="lg")
+
+        # filter by dealerships and states
+        close_dealers = pd.read_json(dealers_json)
+        if picked_states is not None:
+            dealers_in_states = close_dealers[
+                close_dealers["dealer_state"].isin(picked_states)
+            ]
+        else:
+            dealers_in_states = close_dealers
+
+        assert len(dealers_in_states) > 0
+
+        listings = listings.join(
+            dealers_in_states["distance"], on="dealer_id", how="inner"
+        )
+
+        assert len(listings) > 0
+
+        # filter by make and model
         def get_valid_values_from_checklist(cl_dict):
             return set(cl_dict["value"]) & {
                 opt["value"] for opt in cl_dict["options"]
             }
 
         mmt_filter_by_year = defaultdict(set)
-
         for toast in matrix_children:
 
-            # TODO dirty dirty dirty... but let's not get hung up on
-            # trivialities for now
             make, model = toast["props"]["id"].split("|")[1].split(";")
 
             year_div, trim_div = toast["props"]["children"]
@@ -732,10 +806,6 @@ def setup_data_callbacks(
             )
         ]
 
-        print(zipcode, max_distance)
-
-        listings = filter_listings_by_location(listings, zipcode, max_distance)
-
         if len(listings) == 0:
             return dbc.Alert(
                 "No cars that meet your requirements available in your area.",
@@ -746,13 +816,20 @@ def setup_data_callbacks(
             n_peel = 1
         elif len(listings) > 1000:
             n_peel = 2
-        else:
+        elif len(listings) > 100:
             n_peel = 3
+        else:
+            n_peel = 0
 
-        listings = calculate_listing_pareto_front(listings, n_peel=n_peel)
+        listings = calculate_listing_pareto_front(
+            listings, n_peel=n_peel, eliminate_dominated=True
+        )
 
         return plot_listings(listings)
 
+    ###
+    # this callback generates the output link when a point is clicked
+    ###
     @app.callback(
         dd.Output("output-link", "children"),
         [dd.Input("scatter-price-mileage", "clickData")],
@@ -760,7 +837,7 @@ def setup_data_callbacks(
     def fill_in_link(click_data):
         if click_data is not None:
             data = click_data["points"][0]["customdata"]
-            vin, make, model, trim, mpg, dealer, distance = data
+            vin, make, model, trim, mpg, dealer, distance, year = data
 
             return [
                 html.A(
@@ -768,7 +845,7 @@ def setup_data_callbacks(
                     href=f"https://www.truecar.com/used-cars-for-sale/listing/{vin}/",
                 ),
                 html.Br(),
-                html.I(f"Around {round(distance, -1)} miles away."),
+                html.I(f"Around {round(distance, -1):.0f} miles away."),
             ]
         else:
             return "Click a point on the graph to see the purchase link."

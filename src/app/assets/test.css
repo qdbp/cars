@@ -9,20 +9,32 @@
 /* top row */
 
 #_sk_div_slider_box {
-    width: 30%; /* 30 */
+    width: 25%; /* 30 */
     height: 50%;
 }
 
-#_sk_div_loc_picker_box {
-    width: 50%; /* 80 */
+#_sk_div_loc_picker_container {
+    width: 260px; /* 80 */
     height: 50%;
-    left: 30%;
+    left: 25%;
     top: 0;
 }
 
-#loc_picker_box {
-    width: 240px;
+#_sk_div_loc_picker_box {
+    width: 100%; /* 80 */
+    height: 30%;
+    left: 0;
+    top: 0;
 }
+
+#_sk_div_loc_state_box {
+    width: 100%; /* 80 */
+    height: 70%;
+    left: 0;
+    top: 30%;
+    overflow-y: scroll;
+}
+
 
 #input-zipcode {
     width: 200px;
@@ -58,6 +70,14 @@
     height: 50%;
     bottom: 0;
     left: 40%;
+}
+
+#scatter_box {
+    height: 100%;
+}
+
+#scatter-price-mileage {
+    height: 100%;
 }
 
 /* SUBUNITS */
@@ -155,6 +175,10 @@ input[type="checkbox"] {
     position: relative;
 }
 
+.alert {
+    margin-bottom: 8px;
+}
+
 .hidden {
     display: none;
 }
@@ -166,3 +190,4 @@ input[type="checkbox"] {
     border-radius: 0.3%;
     padding: 3px;
 }
+

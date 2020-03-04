@@ -22,7 +22,10 @@ def find_pareto_points(
     Args:
         points: (n, k) array of n points of k dimensions.
             The convention is that the
-        n_peel: number of onion peeling passes to perform
+        n_peel: number of onion peeling passes to perform. If 0, then no
+            qhull peeling is performed and all points are included in the
+            elimіnate_dominated pass. If eliminate_dominated is False,
+            n_peel = 0 makes this function a noop.
         eliminate_dominated: if true, dominated points will be deterministically
             eliminated from the heuristic set returned by the convex hull.
             Worst case running time is O(#(points in c. hull set)^2)
@@ -54,18 +57,20 @@ def find_pareto_points(
 
     # vertices in the candidate pareto set
     vertex_mask = np.zeros(len(points), dtype=bool)
+    if n_peel == 0:
+        vertex_mask[:] = True
+    else:
+        for layer in range(n_peel):
 
-    for layer in range(n_peel):
+            # construct hull of all vertices NOT already in the set
+            try:
+                qhull = sss.ConvexHull(points[~vertex_mask])
+            except (QhullError, ValueError):
+                break
 
-        # construct hull of all vertices NOT already in the set
-        try:
-            qhull = sss.ConvexHull(points[~vertex_mask])
-        except (QhullError, ValueError):
-            break
-
-        pareto_side = np.where((qhull.equations @ test_vector) > 0)
-        pareto_vertices = np.unique(qhull.simplices[pareto_side].ravel())
-        vertex_mask[pareto_vertices] = True
+            pareto_side = np.where((qhull.equations @ test_vector) > 0)
+            pareto_vertices = np.unique(qhull.simplices[pareto_side].ravel())
+            vertex_mask[pareto_vertices] = True
 
     # list of indices into points in the candidate set of dominator points
     pareto_vertices = np.where(vertex_mask)[0]
@@ -87,9 +92,7 @@ def find_pareto_points(
     return pareto_vertices[pareto_vertices >= 0]
 
 
-def calculate_listing_pareto_front(
-    listings: pd.DataFrame, max_miles: int = 150, **pareto_kwargs,
-):
+def calculate_listing_pareto_front(listings: pd.DataFrame, **pareto_kwargs,):
 
     # otherwise the convex hull is degenerate -> qhull explodes
     if len(listings) <= 4:

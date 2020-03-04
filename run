@@ -3,5 +3,4 @@
 from src.scrapers.truecar import run_scraper, run_deleter
 
 if __name__ == "__main__":
-    # run_scraper()
-    run_deleter()
+    run_scraper()
