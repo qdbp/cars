@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-import os
-
-import grequests as grq
-
 import json
-import os.path as osp
 import sqlite3 as sql
 import time
-from typing import Any, Dict
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
 from urllib.parse import urlencode
-from urllib.request import urlopen, Request
+from urllib.request import urlopen
 
 from tqdm import tqdm
 from webcolors import name_to_hex
@@ -22,6 +18,25 @@ URL_LISTING = "https://www.truecar.com/abp/api/vehicles/used/listings/{}/"
 URL_TEMPLATE_LOC = "https://www.truecar.com/abp/api/geographic/locations/{}"
 
 TRUECAR_SCRAPER_STATE = ".scraper_truecar"
+
+
+@dataclass()
+class TruecarState:
+    scrape_started_unix: Optional[int]
+    scrape_finished_unix: Optional[int]
+    start_mileage: Optional[int]
+
+    @classmethod
+    def load(cls, fn=TRUECAR_SCRAPER_STATE) -> Optional[TruecarState]:
+        try:
+            with open(fn, "r") as f:
+                return cls(**json.load(f))
+        except Exception:
+            return None
+
+    def dump(self, fn=TRUECAR_SCRAPER_STATE):
+        with open(fn, "w") as f:
+            json.dump(vars(self), f)
 
 
 def truecar_get_rgb_color(vehicle_dict: Dict[str, Any]) -> str:
@@ -90,8 +105,6 @@ def get_listings_shard_sqlite(
 
     params.append(("page", page))
 
-    seen_vins = []
-
     while True:
 
         url = f"{base_url}?{urlencode(params)}"
@@ -111,7 +124,6 @@ def get_listings_shard_sqlite(
             pricing = listing["pricing"]
 
             vin = vehicle["vin"]
-            seen_vins.append(vin)
 
             if vehicle["mpg_highway"] is None or vehicle["mpg_city"] is None:
                 continue
@@ -196,23 +208,27 @@ def get_listings_shard_sqlite(
         if seen >= progress.total or n_new_cars == 0:
             break
 
-    return total, seen_vins
+    return total
 
 
 def run_scraper(**filter_kwargs):
 
+    if (state := TruecarState.load()) is None:
+        state = TruecarState(-1, -1, 1)
+
+    nodelete = len(filter_kwargs) > 0
+
     if "min_mileage" in filter_kwargs:
         start_mileage = filter_kwargs.pop("min_mileage")
-
-    elif not osp.isfile(TRUECAR_SCRAPER_STATE):
-        start_mileage = 1
-
     else:
-        with open(TRUECAR_SCRAPER_STATE, "r") as f:
-            start_mileage = int(f.read())
+        if state.scrape_finished_unix < state.scrape_started_unix:
+            start_mileage = state.start_mileage
+        else:
+            start_mileage = 1
 
     mileage_delta = 10
     target_total = 300
+
     mileage_cap = filter_kwargs.pop("max_mileage", None) or 500000
 
     conn = sql.Connection(CAR_DB)
@@ -230,13 +246,13 @@ def run_scraper(**filter_kwargs):
         total=0, unit="cars", desc="shard", leave=True, position=1
     )
 
-    # scrape new vins
-    seen_vins = []
+    state.scrape_started_unix = int(time.time())
+
     while True:
 
         max_mileage = min(start_mileage + mileage_delta, mileage_cap)
 
-        total, shard_vins = get_listings_shard_sqlite(
+        total = get_listings_shard_sqlite(
             conn,
             min_mileage=start_mileage,
             max_mileage=max_mileage,
@@ -245,80 +261,23 @@ def run_scraper(**filter_kwargs):
         )
 
         progress.update(mileage_delta)
-        seen_vins.extend(shard_vins)
 
         # mileage_delta < 5 is bugged on the server side
         start_mileage += mileage_delta
         mileage_delta = max(5, int(mileage_delta * target_total / total))
 
-        with open(TRUECAR_SCRAPER_STATE, "w") as f:
-            f.write(str(start_mileage))
+        state.start_mileage = start_mileage
+        state.dump()
 
         if max_mileage == mileage_cap:
             break
 
-    # TODO validate
-    os.unlink(TRUECAR_SCRAPER_STATE)
-    if len(filter_kwargs) == 0:
+    state.scrape_finished_unix = int(time.time())
+    state.dump()
+
+    if not nodelete:
         with conn:
-            all_vins = {
-                vin
-                for (vin,) in conn.executemany(
-                    "SELECT vin from truecar_listings_snapshot"
-                ).fetchall()
-            }
-            bad_vins = all_vins - seen_vins
-            conn.executemany(
-                "DELETE FROM truecar_listings_snapshot WHERE vin = ?", bad_vins
+            conn.execute(
+                f"""DELETE FROM truecar_listings_snapshot
+                WHERE timestamp < {state.scrape_started_unix - 1}"""
             )
-
-
-def run_deleter(block_size=100):
-
-    conn = sql.connect(CAR_DB)
-    with conn:
-        vins = conn.execute(
-            """
-            SELECT vin FROM truecar_listings_snapshot
-            """
-        ).fetchall()
-
-    to_delete = []
-    deleted = 0
-
-    def flush():
-        nonlocal deleted
-        with conn:
-            conn.executemany(
-                "DELETE FROM truecar_listings_snapshot WHERE vin = ?",
-                to_delete,
-            )
-        deleted += len(to_delete)
-        to_delete.clear()
-
-    for block in tqdm(range(0, len(vins) // block_size + 1)):
-
-        block_vins = [
-            vin
-            for (vin,) in vins[block * block_size : (block + 1) * block_size]
-        ]
-
-        responses = grq.map(
-            [grq.head(URL_LISTING.format(vin)) for vin in block_vins]
-        )
-
-        to_delete.extend(
-            [
-                vin
-                for (vin, resp) in zip(block_vins, responses)
-                if resp.status_code == 404
-            ]
-        )
-
-        if len(to_delete) > 100:
-            flush()
-
-    else:
-        flush()
-
-    print(f"Deleted {deleted} bad vins.")

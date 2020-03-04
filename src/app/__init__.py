@@ -17,10 +17,10 @@ from src.analysis.etl import load_recent_listings_and_dealerships
 from src.analysis.geo import great_circle_miles, LATLONG_BY_ZIP
 from src.analysis.pareto_front import calculate_listing_pareto_front
 
-SLIDER_MPG_ID = "cars-slider-mpg"
-SLIDER_MILEAGE_ID = "cars-slider-mileage"
-SLIDER_PRICE_ID = "cars-slider-price"
-SLIDER_YEAR_ID = "cars-slider-year"
+SLIDER_MPG_ID = "slider-mpg"
+SLIDER_MILEAGE_ID = "slider-mileage"
+SLIDER_PRICE_ID = "slider-price"
+SLIDER_YEAR_ID = "slider-year"
 
 SLIDER_ICON_MPG_ID = "cars-slider-mpg-icon"
 SLIDER_ICON_MILEAGE_ID = "cars-slider-mileage-icon"
@@ -33,7 +33,6 @@ MMT_MATRIX_ID = "mmt_matrix"
 
 SCATTER_ID = "scatter_box"
 LOC_PICKER_ID = "loc_picker_box"
-LOC_STATE_ID = "loc_state_box"
 
 INFO_A_ID = "cars-info-a"
 INFO_B_ID = "cars-info-b"
@@ -154,9 +153,7 @@ def create_div_skeleton() -> DivSkeleton:
 
     sliders_box = D("slider_box", *sliders)
 
-    loc_picker_box = D(
-        "loc_picker_container", D(LOC_PICKER_ID), D(LOC_STATE_ID),
-    )
+    loc_picker_box = D("loc_picker_container", D(LOC_PICKER_ID))
 
     mmt_box = D("mmt_box", D(MMT_MM_PICKER_ID), D(MMT_MATRIX_ID),)
 
@@ -255,20 +252,20 @@ def setup_dash_layout(all_listings: pd.DataFrame, sk: DivSkeleton) -> dash.Dash:
     year_slider, mileage_slider, price_slider, mpg_slider = create_sliders()
 
     # everything in its right place
-    sk.fill(SLIDER_ICON_MILEAGE_ID, html.P("🏁️", style=dict(margin=0)))
+    sk.fill(SLIDER_ICON_MILEAGE_ID, html.P("🏁️"))
     sk.fill(SLIDER_MILEAGE_ID, mileage_slider)
 
-    sk.fill(SLIDER_ICON_PRICE_ID, html.P("💰", style=dict(margin=0)))
+    sk.fill(SLIDER_ICON_PRICE_ID, html.P("💰"))
     sk.fill(SLIDER_PRICE_ID, price_slider)
 
-    sk.fill(SLIDER_ICON_YEAR_ID, html.P("📅️️", style=dict(margin=0)))
+    sk.fill(SLIDER_ICON_YEAR_ID, html.P("📅️️"))
     sk.fill(SLIDER_YEAR_ID, year_slider)
 
-    sk.fill(SLIDER_ICON_MPG_ID, html.P("⛽️️", style=dict(margin=0)))
+    sk.fill(SLIDER_ICON_MPG_ID, html.P("⛽️️"))
     sk.fill(SLIDER_MPG_ID, mpg_slider)
 
     ### SCATTER
-    scatter_graph = html.Div(id="scatter_box")
+    scatter_graph = html.Div(id="scatter_box", children=plot_listings(None))
     sk.fill(SCATTER_ID, scatter_graph)
 
     loc_picker = [
@@ -282,11 +279,12 @@ def setup_dash_layout(all_listings: pd.DataFrame, sk: DivSkeleton) -> dash.Dash:
             id="zip_picker_box",
             children=[
                 dbc.InputGroupAddon("📍"),
-                dcc.Input(
+                dbc.Input(
                     id="input-zipcode",
                     placeholder="Zip code",
                     persistence=True,
                     persistence_type="session",
+                    debounce=True,
                 ),
             ],
         ),
@@ -294,7 +292,7 @@ def setup_dash_layout(all_listings: pd.DataFrame, sk: DivSkeleton) -> dash.Dash:
             id="dist_picker_box",
             children=[
                 dbc.InputGroupAddon("↔"),
-                dcc.Input(
+                dbc.Input(
                     id="input-max-distance",
                     placeholder="Maximum distance, miles",
                     type="number",
@@ -304,9 +302,6 @@ def setup_dash_layout(all_listings: pd.DataFrame, sk: DivSkeleton) -> dash.Dash:
                 ),
             ],
         ),
-    ]
-
-    state_picker = [
         html.Hr(),
         dbc.Alert(
             "Limit dealership states.",
@@ -323,22 +318,38 @@ def setup_dash_layout(all_listings: pd.DataFrame, sk: DivSkeleton) -> dash.Dash:
         ),
     ]
 
-    sk.fill(LOC_STATE_ID, state_picker)
     sk.fill(LOC_PICKER_ID, loc_picker)
 
     ### MMT refinement
     # N.B. these are pre-filtered by selection
-    mm_picker_menu = dcc.Dropdown(
-        id="input-mm-picker",
-        # options by callback
-        multi=True,
-        placeholder="Select makes",
-        persistence=True,
-        persistence_type="session",
-        clearable=False,
-    )
+    mm_picker_menu = [
+        dcc.Dropdown(
+            id="input-mm-picker",
+            # options by callback
+            multi=True,
+            placeholder="Select makes",
+            persistence=True,
+            persistence_type="session",
+            clearable=False,
+        ),
+        dbc.Alert(
+            "Select makes and models you are interested in.", color="primary",
+            style={"text-align": "center"},
+        ),
+        dbc.Alert(
+            "Refine trims and years per model on the left.", color="primary",
+            style={"text-align": "center"},
+        ),
+    ]
 
     sk.fill(MMT_MM_PICKER_ID, mm_picker_menu)
+
+    matrix_menus = [
+        dbc.Button("Plot Options", id="input-matrix-button", color="success",),
+        html.Div(id="input-matrix-toasts"),
+    ]
+
+    sk.fill(MMT_MATRIX_ID, matrix_menus)
 
     ### ALERTS
 
@@ -349,9 +360,7 @@ def setup_dash_layout(all_listings: pd.DataFrame, sk: DivSkeleton) -> dash.Dash:
     )
 
     app = dash.Dash(
-        "cars, cars, cars!",
-        external_stylesheets=[dbc.themes.CERULEAN],
-        suppress_callback_exceptions=True,
+        "cars, cars, cars!", external_stylesheets=[dbc.themes.CERULEAN],
     )
     # app.wsgi_app = ProfilerMiddleware(app.wsgi_app, restrictions=[50])
 
@@ -367,6 +376,9 @@ def setup_dash_layout(all_listings: pd.DataFrame, sk: DivSkeleton) -> dash.Dash:
 
 
 def plot_listings(listings):
+
+    if listings is None:
+        return dcc.Graph(id="scatter-price-mileage")
 
     fig = go.Figure(
         go.Scattergl(
@@ -408,13 +420,15 @@ def plot_listings(listings):
         ),
         layout={
             "title": "Available Cars",
-            "height": 430,
+            # "height": 430,
             "clickmode": "event",
             "xaxis": {"title": "Mileage, mi",},
             "yaxis": {"title": "Price, $",},
             "margin": dict(b=0, t=0, l=0, r=0, pad=0),
         },
     )
+
+    fig.update_yaxes(automargin=True)
 
     graph = dcc.Graph(
         id="scatter-price-mileage",
@@ -528,18 +542,12 @@ def setup_data_callbacks(
             if check_mm_in_mpg_bounds(make, model, *mpg_range)
         ]
 
-    def mk_year_refine_callback_id(make, model):
-        return f'input-mmty-refine-year|{make};{model}'
-    
-    def mk_trim_refine_callback_id(make, model):
-        return f'input-mmty-refine-trim|{make};{model}'
-
     ###
     # this callback creates year and trim refinement cards for the selected
     # makes and models
     ###
     @app.callback(
-        dd.Output("_sk_div_mmt_matrix", "children"),
+        dd.Output("input-matrix-toasts", "children"),
         [
             dd.Input("input-mm-picker", "value"),
             dd.Input("input-mm-picker", "options"),
@@ -598,7 +606,7 @@ def setup_data_callbacks(
                 continue
 
             checklist_year = dbc.Checklist(
-                f"input-mmty-refine-year_{make}_{model}",
+                f"input-mmty-refine-year-{make}-{model}",
                 options=(
                     opts := [
                         # reverse sort to match slider
@@ -615,7 +623,7 @@ def setup_data_callbacks(
             )
 
             checklist_trim = dbc.Checklist(
-                f"input-mmty-refine-trim_{make}_{model}",
+                f"input-mmty-refine-trim-{make}-{model}",
                 options=(
                     opts := [
                         {"label": trim, "value": f"{make};{model};{trim}"}
@@ -674,7 +682,8 @@ def setup_data_callbacks(
 
         if (
             len(it := zp.matching(zipcode)) != 1
-            and it[0]["zip_code_type"] != "STANDARD"
+            or (print(it))
+            or it[0]["zip_code_type"] != "STANDARD"
         ):
             return ERR_BAD_ZIP
 
@@ -684,23 +693,18 @@ def setup_data_callbacks(
     # this callback generates the state refinement menu
     ###
     @app.callback(
-        [
-            dd.Output("input-state-picker", "options"),
-            dd.Output("input-state-picker", "value"),
-        ],
-        [dd.Input("cache-dealerships", "children"),],
+        dd.Output("input-state-picker", "options"),
+        [dd.Input("cache-dealerships", "children")],
     )
     def populate_state_options(close_dealers_json: str):
-        close_dealerships = pd.read_json(close_dealers_json)
-        return (
-            (
-                opts := [
-                    {"label": state.upper(), "value": state.upper()}
-                    for state in close_dealerships["dealer_state"].unique()
-                ]
-            ),
-            [opt["value"] for opt in opts],
-        )
+        try:
+            close_dealerships = pd.read_json(close_dealers_json)
+        except ValueError:
+            return []
+        return [
+            {"label": state.upper(), "value": state.upper()}
+            for state in close_dealerships["dealer_state"].unique()
+        ]
 
     ###
     # this callback filters the scatterplot output based on all relevant inputs
@@ -708,19 +712,23 @@ def setup_data_callbacks(
     @app.callback(
         dd.Output("scatter_box", "children"),
         [
+            dd.Input("input-matrix-button", "n_clicks"),
             slider_inputs["price"],
             slider_inputs["mileage"],
-            dd.Input("_sk_div_mmt_matrix", "children"),
             dd.Input("input-state-picker", "value"),
         ],
-        [dd.State("cache-dealerships", "children")],
+        [
+            dd.State("cache-dealerships", "children"),
+            dd.State("input-matrix-toasts", "children"),
+        ],
     )
     def generate_filtered_graph(
+        n_clicked,
         price_limits,
         mileage_limits,
-        matrix_children,
         picked_states,
         dealers_json,
+        matrix_children,
     ):
 
         listings = listings_universe
@@ -743,14 +751,20 @@ def setup_data_callbacks(
             return dbc.Alert("Invalid zipcode.", color="danger",)
 
         elif not dealers_json:
-            return dbc.Spinner(size="lg")
+            return dbc.Alert("Ready to plot", color="primary")
 
         # filter by dealerships and states
         close_dealers = pd.read_json(dealers_json)
+
         if picked_states is not None:
+
+            if len(picked_states) == 0:
+                return dbc.Alert("No states selected.", color="warning")
+
             dealers_in_states = close_dealers[
                 close_dealers["dealer_state"].isin(picked_states)
             ]
+
         else:
             dealers_in_states = close_dealers
 

@@ -3,54 +3,78 @@
 #_sk_div_root {
     height: 100%;
     width: 100%;
+    overflow: hidden;
 }
 
 /* TOP LEVEL BOXES */
 /* top row */
-
 #_sk_div_slider_box {
-    width: 25%; /* 30 */
+    width: 20%;
     height: 50%;
+    top: 0;
 }
 
-#_sk_div_loc_picker_container {
-    width: 260px; /* 80 */
-    height: 50%;
+#_sk_div_slider-mpg_box {
+    width: 25%;
+    height: 100%;
+    left: 0;
+    top: 0;
+}
+
+#_sk_div_slider-price_box {
+    width: 25%;
+    height: 100%;
     left: 25%;
     top: 0;
 }
 
-#_sk_div_loc_picker_box {
-    width: 100%; /* 80 */
-    height: 30%;
-    left: 0;
+#_sk_div_slider-mileage_box {
+    width: 25%;
+    height: 100%;
+    left: 50%;
     top: 0;
 }
 
-#_sk_div_loc_state_box {
-    width: 100%; /* 80 */
-    height: 70%;
+#_sk_div_slider-year_box {
+    width: 25%;
+    height: 100%;
+    left: 75%;
+    top: 0;
+}
+
+#_sk_div_loc_picker_container {
+    width: 20%;
+    height: 50%;
+    left: 20%;
+    top: 0;
+}
+
+#_sk_div_loc_picker_box {
+    width: 100%;
+    height: 100%;
     left: 0;
-    top: 30%;
-    overflow-y: scroll;
-}
-
-
-#input-zipcode {
-    width: 200px;
-    display: block;
-}
-
-#input-max-distance {
-    width: 200px;
-    display: block;
+    top: 0;
 }
 
 #_sk_div_info_box {
-    width: 20%;
-    height: 50%;
-    top: 0;
+    width: 60%;
+    height: 20%;
+    bottom: 0;
     right: 0;
+}
+
+.slider_icon {
+    width: 100%;
+}
+
+.slider_icon p {
+    margin-left: 30%;
+}
+
+.slider {
+    width: 100%;
+    height: 85%;
+    top: 5%
 }
 
 #_sk_div_cars-slider-mpg_box {
@@ -65,11 +89,38 @@
     left: 0;
 }
 
+/* SUBUNITS */
+/* mmt subunits */
+#_sk_div_mm_picker {
+    width: 50%;
+    height: 100%;
+    left: 0;
+}
+
+#_sk_div_mmt_matrix {
+    width: 50%;
+    height: 100%;
+    left: 50%;
+}
+
+#input-matrix-button {
+    height: 40px;
+    width: calc(100% - 10px);
+    margin: 5px;
+}
+
+#input-matrix-toasts {
+    top: 40px;
+    height: calc(100% - 65px);
+    margin-top: 5px;
+    overflow-y: scroll;
+}
+
 #_sk_div_scatter_box {
     width: 60%;
-    height: 50%;
-    bottom: 0;
+    height: 80%;
     left: 40%;
+    top: 0;
 }
 
 #scatter_box {
@@ -80,36 +131,23 @@
     height: 100%;
 }
 
-/* SUBUNITS */
-/* mmt subunits */
-#_sk_div_mm_picker {
-    width: 45%;
-    height: 100%;
-    left: 0;
-}
-
-#_sk_div_mmt_matrix {
-    width: 55%;
-    height: 100%;
-    left: 45%;
-    overflow-y: auto;
-}
-
-
 .sk_div {
     position: absolute;
+    padding: 2px;
 }
 
+/*
 .slider_box {
-    width: 20%;
+    width: 23%;
     height: 100%;
-    position: relative;
     display: inline-block;
+    position: relative;
 }
 
 .slider_icon {
+    position: absolute;
     height: 5%;
-    width: 28%;
+    width: 23%;
     top: 0;
     display: inline-block;
     text-align: center;
@@ -119,8 +157,9 @@
     position: absolute;
     height: 98%;
     width: 100%;
-    bottom: 0;
+    top: 5%;
 }
+ */
 
 .refine_container {
     width: 98%;
@@ -168,26 +207,16 @@ input[type="checkbox"] {
 }
 
 .info_box {
-    width: 90%;
-    margin-right: 5%;
-    margin-left: 5%;
-    display: inline-block;
-    position: relative;
-}
-
-.alert {
-    margin-bottom: 8px;
+    width: 98%;
+    margin: 1%;
 }
 
 .hidden {
     display: none;
 }
 
-
 /* frills styling */
 #_sk_div_root > div {
-    border: 1px solid #eeeeee;
-    border-radius: 0.3%;
-    padding: 3px;
+    border: 1px solid #ddf8;
 }
 
