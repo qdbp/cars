@@ -15,7 +15,6 @@ from plotly import graph_objects as go
 
 from src.analysis.etl import load_recent_listings_and_dealerships
 from src.analysis.geo import great_circle_miles, LATLONG_BY_ZIP
-from src.analysis.pareto_front import calculate_listing_pareto_front
 
 SLIDER_MPG_ID = "slider-mpg"
 SLIDER_MILEAGE_ID = "slider-mileage"
@@ -345,7 +344,7 @@ def setup_dash_layout(all_listings: pd.DataFrame, sk: DivSkeleton) -> dash.Dash:
     sk.fill(MMT_MM_PICKER_ID, mm_picker_menu)
 
     matrix_menus = [
-        dbc.Button("Plot Options", id="input-matrix-button", color="success",),
+        dbc.Button("Plot Cars Now!", id="input-matrix-button", color="success",),
         html.Div(id="input-matrix-toasts"),
     ]
 
@@ -394,9 +393,11 @@ def plot_listings(listings):
                     "dealer_name",
                     "distance",
                     "year",
+                    "price",
                 ]
             ],
             hovertemplate=(
+                '<b style="color: green">$%{customdata[8]}</i><br>'
                 "<i>%{customdata[0]}</i><br>"
                 '<b style="font-size:16">%{customdata[7]}</b><br>'
                 "<b>%{customdata[1]} %{customdata[2]} %{customdata[3]}</b><br>"
@@ -606,7 +607,7 @@ def setup_data_callbacks(
                 continue
 
             checklist_year = dbc.Checklist(
-                f"input-mmty-refine-year-{make}-{model}",
+                id=f"input-mmty-refine-year-{make}-{model}",
                 options=(
                     opts := [
                         # reverse sort to match slider
@@ -623,7 +624,7 @@ def setup_data_callbacks(
             )
 
             checklist_trim = dbc.Checklist(
-                f"input-mmty-refine-trim-{make}-{model}",
+                id=f"input-mmty-refine-trim-{make}-{model}",
                 options=(
                     opts := [
                         {"label": trim, "value": f"{make};{model};{trim}"}
@@ -682,7 +683,6 @@ def setup_data_callbacks(
 
         if (
             len(it := zp.matching(zipcode)) != 1
-            or (print(it))
             or it[0]["zip_code_type"] != "STANDARD"
         ):
             return ERR_BAD_ZIP
@@ -835,9 +835,9 @@ def setup_data_callbacks(
         else:
             n_peel = 0
 
-        listings = calculate_listing_pareto_front(
-            listings, n_peel=n_peel, eliminate_dominated=True
-        )
+        # listings = calculate_listing_pareto_front(
+        #     listings, n_peel=n_peel, eliminate_dominated=True
+        # )
 
         return plot_listings(listings)
 
@@ -851,7 +851,7 @@ def setup_data_callbacks(
     def fill_in_link(click_data):
         if click_data is not None:
             data = click_data["points"][0]["customdata"]
-            vin, make, model, trim, mpg, dealer, distance, year = data
+            vin, make, model, trim, mpg, dealer, distance, *ṟest = data
 
             return [
                 html.A(
@@ -865,7 +865,7 @@ def setup_data_callbacks(
             return "Click a point on the graph to see the purchase link."
 
 
-def start_app():
+def start_app(debug=True):
 
     listings = load_recent_listings_and_dealerships()
     skeleton = create_div_skeleton()
@@ -874,7 +874,7 @@ def start_app():
 
     setup_data_callbacks(app, listings)
 
-    app.run_server(debug=True, host="192.168.1.10")
+    app.run_server(debug=debug, host="0.0.0.0")
 
 
 if __name__ == "__main__":

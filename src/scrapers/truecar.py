@@ -67,6 +67,7 @@ def get_listings_shard_sqlite(
     year_low=1900,
     yearh_high=2030,
     progress=None,
+    do_historical=True,
 ) -> int:
 
     """
@@ -176,13 +177,14 @@ def get_listings_shard_sqlite(
                 """,
                 attributes.values(),
             )
-            conn.executemany(
-                """
-                INSERT OR REPLACE INTO truecar_listings
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                listings.values(),
-            )
+            if do_historical:
+                conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO truecar_listings
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    listings.values(),
+                )
             conn.executemany(
                 """
                 INSERT OR REPLACE INTO truecar_listings_snapshot

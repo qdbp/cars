@@ -1,6 +1,4 @@
 import sqlite3 as sql
-import time
-from datetime import timedelta
 
 import pandas as pd
 import reverse_geocoder as rg
@@ -13,9 +11,10 @@ def load_recent_listings_and_dealerships(
     min_price: float = 1.0,
     max_price: float = 100_000,  # this is a shopping site for the sensible
     min_mileage: int = 0,
-    max_mileage: int = 1_000_000,
+    max_mileage: int = 200_000,
     min_mpg: float = 10,
     max_mpg: float = 1e3,
+    min_year: int = 2000,
 ):
     conn = sql.Connection(CAR_DB)
 
@@ -36,7 +35,7 @@ def load_recent_listings_and_dealerships(
         JOIN truecar_dealerships td on tl.dealer_id = td.dealer_id
         WHERE mpg >= {min_mpg}
         AND mpg <= {max_mpg}
-        AND year >= 1900
+        AND year >= {max(min_year, 1900)}
         AND mileage >= {min_mileage}
         AND mileage <= {max_mileage}
         AND (price_fees + price_listing) >= {min_price}

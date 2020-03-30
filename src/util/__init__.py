@@ -1,8 +1,6 @@
-from matplotlib.figure import Figure
-from pandas import DataFrame
-import matplotlib.pyplot as plt
+from pathlib import Path
 
-DATA_DIR = "/home/main/programming/python/cars/data/"
+DATA_DIR = Path(__file__).parent.parent.parent.joinpath('data').absolute().__str__()
 
 
 def plotfile(s: str) -> str:
