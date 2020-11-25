@@ -1,4 +1,7 @@
 [tool.black]
-line-length = 80
-target-version = ['py38']
-include = '\.pyi?$'
+line_length = 80
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 80

@@ -1,12 +1,13 @@
-from ..util import DATA_DIR, CAR_DB, get_sql_type
 import sqlite3 as sql
+
 import pandas as pd
 
+from ..util import CAR_DB, DATA_DIR, get_sql_type
 
 DROP_COLS = ["id"]
 
 
-def make_fueleconomy_table():
+def make_fueleconomy_table() -> None:
 
     with open(DATA_DIR + "/fueleconomy.csv", "r") as f:
 
@@ -33,7 +34,7 @@ pd.set_option("display.max_columns", None)
 pd.set_option("display.width", 1000)
 
 
-def get_fueleco_for_vin(nhtsa_row: pd.Series, fueleco: pd.DataFrame):
+def get_fueleco_for_vin(nhtsa_row: pd.Series, fueleco: pd.DataFrame) -> None:
 
     candidate_vins = fueleco[
         (fueleco["year"] == nhtsa_row["year"])
@@ -42,7 +43,7 @@ def get_fueleco_for_vin(nhtsa_row: pd.Series, fueleco: pd.DataFrame):
 
     print(f"{nhtsa_row =}")
     print(f"{len(candidate_vins) =}")
-    print(candidate_vins['model'])
+    print(candidate_vins["model"])
     # print(f"{candidate_vins = }")
 
     input()
@@ -51,7 +52,7 @@ def get_fueleco_for_vin(nhtsa_row: pd.Series, fueleco: pd.DataFrame):
     code.interact(local=locals())
 
 
-def populate_fueleconomy_table():
+def populate_fueleconomy_table() -> None:
 
     fueleco = pd.read_csv(DATA_DIR + "/fueleconomy.csv").sort_values(
         ["year"], ascending=False

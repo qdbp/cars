@@ -1,20 +1,20 @@
 from __future__ import annotations
-from hashlib import sha1
 
 import json
 import sqlite3 as sql
-from asyncio import Semaphore, wait, FIRST_COMPLETED, create_task
+from asyncio import FIRST_COMPLETED, Future, Semaphore, ensure_future
 from asyncio import run as aiorun
-from typing import Dict, Any, Union, Iterable, Coroutine, Awaitable, Set
+from asyncio import wait
+from hashlib import sha1
+from typing import Any, Dict, Iterable, List, Set, Union
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-import numpy.random as npr
 from aiohttp import ClientSession
 from tqdm import tqdm
 
-from src.util import CAR_DB, try_convert, get_sql_type
-from src.vin import ShortVin, TEST_VIN, Vin
+from cars.util import CAR_DB, get_sql_type, try_convert_to_num
+from cars.vin import TEST_VIN, ShortVin, Vin
 
 NHTSA_BATCH_DECODE_URL = (
     "https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVINValuesBatch/"
@@ -106,7 +106,7 @@ def to_snake_case(s: str) -> str:
     return "".join(out).strip("_").strip()
 
 
-def make_nhtsa_table():
+def make_nhtsa_table() -> None:
 
     reference_vin = TEST_VIN
     result = download_vins_batch([reference_vin])[0]
@@ -135,7 +135,9 @@ def make_nhtsa_table():
             f.write(cmd)
 
 
-def download_vins_batch(truncated_vins: Iterable[Union[Vin, ShortVin]]):
+def download_vins_batch(
+    truncated_vins: Iterable[Union[Vin, ShortVin]]
+) -> List[Dict[str, Any]]:
 
     vin_str = ";".join(
         [tv + ("*" if len(tv) < 17 else "") for tv in truncated_vins]
@@ -154,14 +156,15 @@ def download_vins_batch(truncated_vins: Iterable[Union[Vin, ShortVin]]):
 def clean_nhtsa_dict(result: Dict[str, str]) -> Dict[str, Any]:
 
     out = {
-        new_k: try_convert(v)
+        new_k: try_convert_to_num(v)
         for k, v in sorted(result.items())
         if (new_k := NHTSA_RENAME_COLS.get((s_k := to_snake_case(k)), s_k))
         in NHTSA_KEEP_COLS
     }
 
     out["nhtsa_id"] = (
-        'nh_' + sha1("".join(map(str, out.values())).encode("ascii"))
+        "nh_"
+        + sha1("".join(map(str, out.values())).encode("ascii"))
         .hexdigest()[:16]
         .upper()
     )
@@ -169,7 +172,7 @@ def clean_nhtsa_dict(result: Dict[str, str]) -> Dict[str, Any]:
     return out
 
 
-async def nhtsa_scraper():
+async def nhtsa_scraper() -> None:
 
     semaphore_limit = 256
     futures_target = 4 * semaphore_limit
@@ -209,8 +212,9 @@ async def nhtsa_scraper():
         results.append((vin, result))
 
     cur_vin_ix = futures_target
-    futures: Set[Awaitable] = {
-        get_vin(vin, session) for vin in vins_to_dl[:futures_target]
+    futures: Set[Future[None]] = {
+        ensure_future(get_vin(vin, session))
+        for vin in vins_to_dl[:futures_target]
     }
 
     while len(futures) > 0:
@@ -218,7 +222,7 @@ async def nhtsa_scraper():
         progress.update(len(done))
 
         while len(futures) < futures_target and cur_vin_ix < len(vins_to_dl):
-            futures.add(get_vin(vins_to_dl[cur_vin_ix], session))
+            futures.add(ensure_future(get_vin(vins_to_dl[cur_vin_ix], session)))
             cur_vin_ix += 1
 
         if len(results) < flush_every or len(futures) == 0:
@@ -244,5 +248,5 @@ async def nhtsa_scraper():
         results.clear()
 
 
-def scrape_nhtsa():
+def scrape_nhtsa() -> None:
     aiorun(nhtsa_scraper())

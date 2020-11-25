@@ -1,6 +1,9 @@
 from pathlib import Path
+from typing import Union
 
-DATA_DIR = Path(__file__).parent.parent.parent.joinpath('data').absolute().__str__()
+DATA_DIR = (
+    Path(__file__).parent.parent.parent.joinpath("data").absolute().__str__()
+)
 
 
 def plotfile(s: str) -> str:
@@ -30,7 +33,7 @@ def sqlfile(s: str) -> str:
 CAR_DB = sqlfile("truecar")
 
 
-def try_convert(v):
+def try_convert_to_num(v: str) -> Union[int, float, str]:
 
     try:
         return int(v)
@@ -45,7 +48,7 @@ def try_convert(v):
     return v
 
 
-def get_sql_type(v: str) -> str:
+def get_sql_type(v: Union[int, float, str]) -> str:
     if isinstance(v, int):
         typ = "INTEGER"
     elif isinstance(v, float):

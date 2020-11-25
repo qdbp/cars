@@ -1,19 +1,22 @@
+from functools import reduce
+from operator import iand
+
+import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
 from pandas import DataFrame
 
-import matplotlib.pyplot as plt
-from functools import reduce
-from operator import iand
-import numpy as np
-
 
 def hexbin_pairplot(
-    df: DataFrame, bins: int = 100, hexbins: int = 25, limit_quantile=0.975
+    df: DataFrame,
+    bins: int = 100,
+    hexbins: int = 25,
+    limit_quantile: float = 0.975,
 ) -> Figure:
 
-    plt.set_cmap('magma')
+    plt.set_cmap("magma")
 
     fig = plt.figure()
     ncols = len(df.columns)
@@ -38,10 +41,13 @@ def hexbin_pairplot(
 
     max_bins = [len(df.iloc[:, col].value_counts()) for col in range(ncols)]
 
+    sp: Axes
+
     for diag in range(ncols):
         sp = fig.add_subplot(gs[diag, diag])
         sp.hist(
-            df.iloc[:, diag].values, bins=min(bins, max_bins[diag]),
+            df.iloc[:, diag].values,
+            bins=min(bins, max_bins[diag]),
         )
         sp.set_xlim(lbs.iloc[diag], ubs.iloc[diag])
         if diag == 0:
@@ -53,12 +59,12 @@ def hexbin_pairplot(
         for col in range(ncols):
             if row == col:
                 continue
-            sp: Axes = fig.add_subplot(gs[row, col])
+            sp = fig.add_subplot(gs[row, col])
             sp.hexbin(
                 df.iloc[:, col],
                 df.iloc[:, row],
                 gridsize=min([hexbins, max_bins[col], max_bins[row]]),
-                bins=np.linspace(3, 1000, num=100) ** 2
+                bins=np.linspace(3, 1000, num=100) ** 2,
             )
             sp.set_xlim(df.iloc[:, col].min(), ubs.iloc[col])
             sp.set_ylim(df.iloc[:, row].min(), ubs.iloc[row])

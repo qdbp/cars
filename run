@@ -1,6 +1,6 @@
 #!/bin/python -W ignore
 
-from src.scrapers.truecar import run_scraper
+from cars.scrapers.truecar import run_scraper
 
 if __name__ == "__main__":
     run_scraper()

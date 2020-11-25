@@ -1,8 +1,16 @@
+-e ../py9lib
+
+profilehooks
+
 shapely
 plotly
 dash
+dash-bootstrap-components
+zipcodes
+reverse_geocoder
+geopy
 seaborn
-cython
+numba
 
 click
 tqdm
@@ -14,3 +22,5 @@ webcolors
 pandas
 
 aiohttp[speedups]
+
+-r requirements-dev.txt

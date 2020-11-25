@@ -2,10 +2,16 @@
 data
 tags
 weights
+plots
+legacy
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+.mypy_cache
+.pytest_cache
+.run
+.venv
 
 # C extensions
 *.so
@@ -95,4 +101,4 @@ ENV/
 
 **/.idea
 **.iml
-venv/
+tests/truecar_dealerships.csv
