@@ -12,6 +12,7 @@ __pycache__/
 .pytest_cache
 .run
 .venv
+venv
 
 # C extensions
 *.so

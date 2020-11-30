@@ -21,6 +21,11 @@ CREATE TABLE IF NOT EXISTS
 
 ) WITHOUT ROWID;
 
+CREATE INDEX 'ix_attrs_trim' ON truecar_ymms_attrs(trim_slug);
+CREATE INDEX 'ix_listings_ymms' ON truecar_listings(year, make, model, style);
+CREATE INDEX 'ix_listings_mileage' ON truecar_listings(mileage);
+CREATE INDEX 'ix_listings_price' ON truecar_listings(price);
+
 CREATE TABLE IF NOT EXISTS
     truecar_ymms_attrs
 (

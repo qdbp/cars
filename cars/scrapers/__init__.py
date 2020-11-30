@@ -1,5 +1,23 @@
 from typing import Optional, TypedDict
 
+KNOWN_DRIVETRAINS = ("4WD", "AWD", "FWD", "RWD")
+KNOWN_BODIES = (
+    "Cargo Van",
+    "Chassis Cab Truck",
+    "Convertible",
+    "Coupe",
+    "Hatchback",
+    "Minivan",
+    "Passenger Van",
+    "Pickup Truck",
+    "SUV",
+    "Sedan",
+    "Wagon",
+)
+KNOWN_FUEL_TYPES = ("gas", "hybrid", "electric")
+TRANSMISSIONS = ("auto", "manual")
+TRANSMISSION_VALS = (1, 0)
+
 
 class YMMSAttr(TypedDict):
     year: int
