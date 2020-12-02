@@ -101,8 +101,8 @@ def reverse_index(vals: Iterable[T]) -> Dict[T, int]:
     return {v: ix for ix, v in enumerate(vals)}
 
 
+@timed(LOG.info)
 def refresh_universe() -> None:
-    LOG.info("Refreshing global data frames...")
 
     global ATTRS
     global DEALERS

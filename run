@@ -1,6 +1,20 @@
-#!/bin/python -W ignore
+#!/usr/bin/env python
 
-from cars.scrapers.truecar import run_scraper
+from argparse import ArgumentParser
+
+from cars.scrapers.truecar import init_parser as init_truecar
+
+
+def main() -> None:
+
+    parser = ArgumentParser(prog="cars")
+    sub = parser.add_subparsers()
+
+    init_truecar(sub.add_parser("scrape-truecar"))
+
+    args = parser.parse_args()
+    args.exe(args)
+
 
 if __name__ == "__main__":
-    run_scraper()
+    main()

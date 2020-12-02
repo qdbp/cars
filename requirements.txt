@@ -1,26 +1,26 @@
--e ../py9lib
+# core app
+plotly==4.13.0
+dash==1.17.0
+dash-bootstrap-components==0.10.7
 
-profilehooks
+# scraper
+tqdm==4.54.0
+webcolors==1.11.1
+aiohttp[speedups]==3.7.3
 
-shapely
-plotly
-dash
-dash-bootstrap-components
-zipcodes
-reverse_geocoder
-geopy
-seaborn
-numba
+# libs:
+git+https://github.com/qdbp/py9lib.git@c7df26e
 
-click
-tqdm
 
-matplotlib
-scikit-learn
-numpy
-webcolors
-pandas
+# libs: geo
+zipcodes==1.1.2
+reverse_geocoder==1.5.1
+geopy==2.0.0
 
-aiohttp[speedups]
+# libs: data
+pandas==1.1.4
+numpy==1.19.4
+numba==0.52.0
 
+# dev
 -r requirements-dev.txt

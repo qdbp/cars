@@ -1,6 +1,6 @@
 from setuptools import setup
 
-__version__ = "1.0.20201129235807"
+__version__ = "1.0.20201201231838"
 
 setup(
     name="cars",

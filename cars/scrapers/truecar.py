@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import sqlite3 as sql
 import time
+from argparse import ArgumentParser, Namespace
 from asyncio import run
+from atexit import register
 from collections import namedtuple
 from dataclasses import dataclass
 from typing import AsyncIterable, Dict, Iterable, Literal
@@ -74,8 +76,6 @@ async def get_listings_shard_sqlite(
     electric: bool = True,
     hybrid: bool = True,
     gas: bool = True,
-    location: str = "bryn-mawr",
-    radius: int = 5000,
     min_mileage: int = 0,
     max_mileage: int = 500000,
     min_price: int = 0,
@@ -93,8 +93,6 @@ async def get_listings_shard_sqlite(
     params = [
         ("collapse", "false"),
         ("fallback", "false"),
-        ("city", location),
-        ("search_radius", radius),
         ("mileage_low", min_mileage),
         ("mileage_high", max_mileage),
         ("list_price_high", max_price),
@@ -225,7 +223,7 @@ def insert_listings(details: Iterable[TruecarDetails]) -> None:
         conn.executemany(
             # language=sql
             f"""
-            INSERT OR IGNORE INTO truecar_listings
+            INSERT OR REPLACE INTO truecar_listings
             {mk_column_spec(details[0].listing)}
             """,
             (d.listing for d in details),
@@ -238,33 +236,30 @@ def insert_listings(details: Iterable[TruecarDetails]) -> None:
     backoff_rate=10,
     log_fun=LOG.error,
 )  # type: ignore
-async def run_scraper(**filter_kwargs) -> None:
+async def run_scraper(args: Namespace) -> None:
 
-    LOG.info("Starting scrape.")
+    LOG.info("Starting Truecar scrape.")
 
-    if (state := TruecarState.load()) is None:
+    if (state := TruecarState.load()) is None or args.force_restart:
         state = TruecarState(-1, -1, 1)
-
-    nodelete = len(filter_kwargs) > 0
-
-    if "min_mileage" in filter_kwargs:
-        start_mileage = filter_kwargs.pop("min_mileage")
     else:
-        if state.scrape_finished_unix < state.scrape_started_unix:
-            start_mileage = state.start_mileage
-        else:
-            start_mileage = 1
+        LOG.info(f"Restarting scrape with state {state}.")
+
+    if state.scrape_finished_unix < state.scrape_started_unix:
+        start_mileage = state.start_mileage
+    else:
+        start_mileage = 1
 
     mileage_delta = 10
     target_total = 1000
-
-    mileage_cap = filter_kwargs.pop("max_mileage", None) or 500000
+    mileage_cap = 500_000
 
     conn = sql.Connection(CAR_DB)
+    register(conn.close)
 
     state.scrape_started_unix = int(time.time())
 
-    limiter = aratelimit(3, 0.5)
+    limiter = aratelimit(3, args.ratelimit)
     session = ClientSession()
 
     listings = []
@@ -286,7 +281,6 @@ async def run_scraper(**filter_kwargs) -> None:
                     limiter=limiter,
                     min_mileage=start_mileage,
                     max_mileage=max_mileage,
-                    **filter_kwargs,
                 )
             ):
                 listings.append(listing)
@@ -301,13 +295,13 @@ async def run_scraper(**filter_kwargs) -> None:
             state.start_mileage = start_mileage
             state.dump()
 
-            if max_mileage == mileage_cap:
+            if max_mileage >= mileage_cap:
                 break
 
     state.scrape_finished_unix = int(time.time())
     state.dump()
 
-    if not nodelete:
+    if args.keep_old:
         with conn:
             conn.execute(
                 f"""DELETE FROM truecar_listings
@@ -315,5 +309,22 @@ async def run_scraper(**filter_kwargs) -> None:
             )
 
 
-if __name__ == "__main__":
-    run(run_scraper())
+def init_parser(parser: ArgumentParser) -> None:
+
+    parser.add_argument(
+        "--ratelimit",
+        default=0.5,
+        type=float,
+        help="rate limit, seconds between requests",
+    )
+    parser.add_argument(
+        "--force-restart",
+        action="store_true",
+        help="trash state and restart from scratch",
+    )
+    parser.add_argument(
+        "--keep-old",
+        action="store_true",
+        help="do not delete old listings",
+    )
+    parser.set_defaults(exe=lambda args: run(run_scraper(args)))

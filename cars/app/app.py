@@ -3,6 +3,8 @@ from typing import NoReturn, Tuple
 
 import dash_bootstrap_components as dbc
 from dash import Dash
+
+# noinspection PyPackageRequirements
 from flask import Flask
 
 import cars.app.callbacks as cb
