@@ -1,0 +1,15 @@
+[Unit]
+Description="cars app engine"
+
+[Service]
+User=nginx
+Group=nginx
+
+EnvironmentFile=/etc/cars.conf
+
+ProtectSystem=True
+ProtectHome=True
+WorkingDirectory=/srv/http/cars/
+
+
+ExecStart=/usr/bin/uwsgi --ini uwsgi.ini --virtualenv .venv

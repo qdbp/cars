@@ -1,3 +1,4 @@
+import os
 import sqlite3 as sql
 from functools import lru_cache
 from gc import collect
@@ -24,7 +25,9 @@ YMMT_KEY = ["year", "make", "model", "trim_slug"]
 MAX_PRICE = 100_000
 MAX_MILEAGE = 200_000
 
-LISTING_LIMIT = 250
+LISTING_LIMIT = int(os.getenv("LISTING_LIMIT", "250"))
+
+LOG.info(f"Set {LISTING_LIMIT=}")
 
 sql.register_adapter(int64, int)
 sql.register_adapter(uint64, int)
@@ -101,7 +104,7 @@ def reverse_index(vals: Iterable[T]) -> Dict[T, int]:
     return {v: ix for ix, v in enumerate(vals)}
 
 
-@timed(LOG.info)
+@timed(LOG.info)  # type: ignore
 def refresh_universe() -> None:
 
     global ATTRS
