@@ -15,12 +15,12 @@ git+https://github.com/qdbp/py9lib.git@c7df26e
 # libs: geo
 zipcodes==1.1.2
 reverse_geocoder==1.5.1
-geopy==2.0.0
+geopy==2.2.0
 
 # libs: data
 pandas==1.1.4
 numpy==1.19.4
-numba==0.52.0
+numba
 
 # dev
 -r requirements-dev.txt

@@ -57,7 +57,7 @@ def load_attrs() -> DataFrame:
                 year, make, model, style, trim_slug, style,
                 (0.45 * mpg_hwy + 0.55 * mpg_city) as mpg,
                 fuel_type, body, drivetrain, is_auto, engine
-            FROM truecar_ymms_attrs
+            FROM ymms_attrs
             """,
             conn,
             index_col=["year", "make", "model", "trim_slug"],

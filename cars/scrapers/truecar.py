@@ -1,27 +1,34 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3 as sql
 import time
 from argparse import ArgumentParser, Namespace
 from asyncio import run
 from atexit import register
-from collections import namedtuple
 from dataclasses import dataclass
-from typing import AsyncIterable, Dict, Iterable, Literal
-from typing import Optional as Opt
+from datetime import datetime
+from typing import AsyncIterable, Literal
 from urllib.parse import urlencode
 
 from aiohttp import ClientError, ClientSession
 from py9lib.async_ import aenumerate, aratelimit, retry
-from py9lib.db_ import mk_column_spec
 from tqdm import tqdm
-from webcolors import name_to_hex
+from webcolors import CSS2, CSS3, CSS21, HTML4, name_to_hex
 
 from cars import LOG
-from cars.scrapers import Dealership, TruecarListing, YMMSAttr
+from cars.scrapers import (
+    Dealership,
+    Listing,
+    ListingWithContext,
+    VehicleHistory,
+    YMMSAttr,
+    insert_listings,
+)
 from cars.util import CAR_DB
 
+SOURCE_NAME = "truecar"
 URL_AGG = "..."
 URL_LISTING = "https://www.truecar.com/abp/api/vehicles/used/listings/{}/"
 URL_TEMPLATE_LOC = "https://www.truecar.com/abp/api/geographic/locations/{}"
@@ -35,7 +42,7 @@ class TruecarState:
     fn: str = (default_fn := ".scraper_truecar")
 
     @classmethod
-    def load(cls, fn: str = default_fn) -> Opt[TruecarState]:
+    def load(cls, fn: str = default_fn) -> TruecarState | None:
         try:
             with open(fn, "r") as f:
                 return cls(**json.load(f))
@@ -44,28 +51,32 @@ class TruecarState:
 
     def dump(self) -> None:
         with open(self.fn, "w") as f:
-            json.dump(vars(self), f)
+            json.dump(vars(self), f, indent=4)
+
+
+def tryhard_name_to_hex(name: str) -> str | None:
+    for spec in [CSS3, CSS21, CSS2, HTML4]:
+        try:
+            return name_to_hex(name.lower(), spec)  # type: ignore
+        except ValueError:
+            continue
+    return None
 
 
 def truecar_get_rgb_color(
-    vehicle_dict: Dict[str, str], which: Literal["interior", "exterior"]
-) -> Opt[str]:
-    out: Opt[str] = None
+    vehicle_dict: dict[str, str], which: Literal["interior", "exterior"]
+) -> str | None:
+    out: str | None
     if (rgb_str := vehicle_dict.get(f"{which}_color_rgb")) is not None:
-        return rgb_str
-    try:
-        out = name_to_hex(vehicle_dict.get(f"{which}_color"))[1:]
-    except ValueError:
-        try:
-            out = name_to_hex(vehicle_dict.get(f"{which}_color_generic"))[1:]
-        except ValueError:
-            return None
-    return out
+        return rgb_str.lstrip("#").upper()
 
-
-TruecarDetails = namedtuple(
-    "TruecarDetails", ["dealership", "ymms_attr", "listing"]
-)
+    for key in [f"{which}_color", f"{which}_color_generic"]:
+        cstr = vehicle_dict.get(key)
+        if cstr is not None:
+            out = tryhard_name_to_hex(cstr)
+            if out is not None:
+                return out.lstrip("#").upper()
+    return None
 
 
 async def get_listings_shard_sqlite(
@@ -82,7 +93,7 @@ async def get_listings_shard_sqlite(
     max_price: int = 2500000,
     min_year: int = 1900,
     max_year: int = 2030,
-) -> AsyncIterable[TruecarDetails]:
+) -> AsyncIterable[ListingWithContext]:
 
     """
     Workhorse function to download car data from Truecar based on query limits.
@@ -115,7 +126,6 @@ async def get_listings_shard_sqlite(
     params.append(("page", page))
 
     limited_get = limiter(sess.get)
-    global trims
 
     while True:
         resp = await limited_get(f"{base_url}?{urlencode(params)}")
@@ -124,18 +134,39 @@ async def get_listings_shard_sqlite(
         for listing in j["listings"]:
 
             vehicle = listing["vehicle"]
+            hist_dict = vehicle["condition_history"]
+            ti = hist_dict["titleInfo"]
+
+            history = VehicleHistory(
+                is_accident=hist_dict["accidentCount"] == 0,
+                is_framedamage=ti["isFrameDamaged"],
+                is_salvage=ti["isSalvage"],
+                is_lemon=ti["isLemon"],
+                is_theft=ti["isTheftRecovered"],
+                n_owners=hist_dict["ownerCount"] or 0,
+                is_rental=hist_dict["isRentalCar"],
+                is_fleet=hist_dict["isFleetCar"],
+            )
+
             dealer_dict = listing["dealership"]
+            loc = dealer_dict["location"]
+            dealer_addr = loc["address1"] + (
+                "" if loc["address2"] is None else " " + loc["address2"]
+            )
 
             if vehicle["mpg_highway"] is None or vehicle["mpg_city"] is None:
                 continue
 
             dealership = Dealership(
-                dealer_id=(dealer_id := dealer_dict["id"]),
+                address=dealer_addr,
+                zip=(dealer_zip := loc["postal_code"]),
                 dealer_name=dealer_dict["name"],
-                lat=(loc := dealer_dict["location"])["lat"],
+                lat=loc["lat"],
                 lon=loc["lng"],
                 city=loc["city"],
                 state=loc["state"],
+                phone=None,  # TODO check if we're just missing this
+                website=dealer_dict["links"]["website_link"],
             )
             ymms_attr = YMMSAttr(
                 year=(year := vehicle["year"]),
@@ -148,26 +179,32 @@ async def get_listings_shard_sqlite(
                 fuel_type=vehicle["fuel_type"].lower(),
                 body=vehicle["body_style"],
                 drivetrain=vehicle["drive_train"],
-                engine=vehicle["engine"],
+                # engine=vehicle["engine"],
                 is_auto=vehicle["transmission"] == "Automatic",
             )
 
-            listing = TruecarListing(
-                vin=(vehicle["vin"]),
-                timestamp=round(time.time()),
-                dealer_id=dealer_id,
+            listing = Listing(
+                source=SOURCE_NAME,
+                vin=vehicle["vin"],
+                first_seen=round(
+                    datetime.fromisoformat(listing["listed_at"]).timestamp()
+                ),
+                last_seen=round(time.time()),
+                dealer_address=dealer_addr,
+                dealer_zip=dealer_zip,
                 year=year,
                 make=make,
                 model=model,
                 style=style,
                 mileage=vehicle["mileage"],
                 price=listing["pricing"]["total_price"],
-                color_rgb=truecar_get_rgb_color(vehicle, "exterior"),
+                color_rgb_int=truecar_get_rgb_color(vehicle, "exterior"),
                 # TODO parse interior to hex as well.
-                color_interior=vehicle["interior_color"],
+                color_rgb_ext=truecar_get_rgb_color(vehicle, "interior"),
+                history_flags=history,
             )
 
-            yield TruecarDetails(dealership, ymms_attr, listing)
+            yield ListingWithContext(dealership, ymms_attr, listing)
 
         total = j["total"]
         page += 1
@@ -181,57 +218,8 @@ async def get_listings_shard_sqlite(
             break
 
 
-def insert_listings(details: Iterable[TruecarDetails]) -> None:
-
-    details = list(details)
-    if not details:
-        return
-
-    dealers = list(
-        {l.dealership["dealer_id"]: l.dealership for l in details}.values()
-    )
-    ymmss = list(
-        {
-            (
-                l.ymms_attr["year"],
-                l.ymms_attr["make"],
-                l.ymms_attr["model"],
-                l.ymms_attr["style"],
-            ): l.ymms_attr
-            for l in details
-        }.values()
-    )
-
-    with sql.connect(CAR_DB) as conn:
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.executemany(
-            # language=sql
-            f"""
-            INSERT OR IGNORE INTO truecar_dealerships
-            {mk_column_spec(dealers[0])}
-            """,
-            dealers,
-        )
-        conn.executemany(
-            # language=sql
-            f"""
-            INSERT OR IGNORE INTO truecar_ymms_attrs
-            {mk_column_spec(ymmss[0])}
-            """,
-            ymmss,
-        )
-        conn.executemany(
-            # language=sql
-            f"""
-            INSERT OR REPLACE INTO truecar_listings
-            {mk_column_spec(details[0].listing)}
-            """,
-            (d.listing for d in details),
-        )
-
-
 @retry(
-    [ClientError],
+    [ClientError, asyncio.TimeoutError],
     backoff_start=10,
     backoff_rate=10,
     log_fun=LOG.error,
@@ -301,16 +289,8 @@ async def run_scraper(args: Namespace) -> None:
     state.scrape_finished_unix = int(time.time())
     state.dump()
 
-    if args.keep_old:
-        with conn:
-            conn.execute(
-                f"""DELETE FROM truecar_listings
-                WHERE timestamp < {state.scrape_started_unix - 1}"""
-            )
-
 
 def init_parser(parser: ArgumentParser) -> None:
-
     parser.add_argument(
         "--ratelimit",
         default=0.5,
@@ -321,10 +301,5 @@ def init_parser(parser: ArgumentParser) -> None:
         "--force-restart",
         action="store_true",
         help="trash state and restart from scratch",
-    )
-    parser.add_argument(
-        "--keep-old",
-        action="store_true",
-        help="do not delete old listings",
     )
     parser.set_defaults(exe=lambda args: run(run_scraper(args)))
