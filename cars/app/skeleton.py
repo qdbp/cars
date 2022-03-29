@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any
 
 import dash_html_components as html
 from dash.development.base_component import Component
@@ -34,7 +34,7 @@ SK_INFO_D = "cars-info-d"
 SK_CACHE = "cached-data"
 
 
-class DivSkeleton(Dict[str, Div]):
+class DivSkeleton(dict[str, Div]):
     """
     A dict of named ids to Divs.
 
@@ -83,12 +83,7 @@ def create_div_skeleton() -> DivSkeleton:
             D(SK_SLIDER_YEAR, className=SK_SLIDER_BOX),
         ),
         D(SK_TOP_SELECTORS),
-        D(
-            SK_LOWER_LEFT,
-            D(SK_CAR_OPTS_BOX),
-            D(SK_MM_PICKER),
-            D(SK_LL_INFO),
-        ),
+        D(SK_LOWER_LEFT, D(SK_CAR_OPTS_BOX), D(SK_MM_PICKER), D(SK_LL_INFO)),
         D(SK_MMT_MATRIX),
         D(SK_SCATTER),
         D(

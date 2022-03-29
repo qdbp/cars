@@ -17,9 +17,7 @@ def prepare_app() -> Tuple[Flask, Dash]:
 
     app = Flask(__name__)
     dash = Dash(
-        __name__,
-        server=app,
-        external_stylesheets=[dbc.themes.SANDSTONE],
+        __name__, server=app, external_stylesheets=[dbc.themes.SANDSTONE]
     )
 
     # import callback files to get deferred callbacks

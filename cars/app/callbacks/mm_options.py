@@ -85,9 +85,7 @@ deferred_clientside_callback(
         Input(ToggleButtonGroup.selector(input=INPID_OPTS_FUEL), "active"),
         Input(ToggleButtonGroup.selector(input=INPID_OPTS_BODY), "active"),
     ],
-    [
-        State(STORE_ALL_CARS, "data"),
-    ],
+    [State(STORE_ALL_CARS, "data")],
     prevent_initial_call=True,
 )
 

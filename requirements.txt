@@ -4,13 +4,14 @@ dash==1.17.0
 dash-bootstrap-components==0.10.7
 
 # scraper
-tqdm==4.54.0
 webcolors==1.11.1
-aiohttp[speedups]==3.7.3
+bitstruct==8.13.0
+requests==2.27.1
+selenium-wire==4.6.3
 
-# libs:
+# libs: general
 git+https://github.com/qdbp/py9lib.git@c7df26e
-
+xdg
 
 # libs: geo
 zipcodes==1.1.2
@@ -18,8 +19,7 @@ reverse_geocoder==1.5.1
 geopy==2.2.0
 
 # libs: data
-pandas==1.1.4
-numpy==1.19.4
+pandas
 numba
 
 # dev

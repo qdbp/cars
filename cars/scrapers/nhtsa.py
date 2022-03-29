@@ -68,9 +68,7 @@ NHTSA_KEEP_COLS = [
 ]
 
 # renaming map, after snake_case conversion
-NHTSA_RENAME_COLS = {
-    "model_year": "year",
-}
+NHTSA_RENAME_COLS = {"model_year": "year"}
 
 
 def to_snake_case(s: str) -> str:

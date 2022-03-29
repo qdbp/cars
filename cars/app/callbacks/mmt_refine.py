@@ -1,7 +1,7 @@
 import operator
 from collections import defaultdict
 from functools import reduce
-from typing import Any, Dict, List, Set, Tuple, Union
+from typing import Any
 
 import dash_bootstrap_components as dbc
 import dash_html_components as html
@@ -53,15 +53,12 @@ def mk_trim_row_header(make: str, model: str, trim: str) -> Div:
                         options=[dict(label="", value=True)],
                         switch=True,
                         **PERSIST_ARGS,
-                    ),
+                    )
                 ],
             ),
             Div(
                 className="mmt-trim mmt-trim-right",
-                children=html.Span(
-                    trim.upper(),
-                    className="mmt-trim",
-                ),
+                children=html.Span(trim.upper(), className="mmt-trim"),
             ),
         ],
     )
@@ -87,11 +84,11 @@ ToggleButtonGroup.stage_deferred_callbacks(MMT_REFINE_SELECTORS)
     prevent_initial_call=True,
 )
 def generate_mmt_refinement_cards(
-    year_range: Tuple[int, int],
-    selected_mms: List[str],
-    mm_opts: List[Dict[str, str]],
-    cars: Union[str, List[Dict[str, Any]]],
-) -> Tuple[str, str, List[Component]]:
+    year_range: tuple[int, int],
+    selected_mms: list[str],
+    mm_opts: list[dict[str, str]],
+    cars: str | list[dict[str, Any]],
+) -> tuple[str, str, list[Component]]:
     """
     Generates year/trim refinement menus for each selected make/model.
     """
@@ -111,7 +108,7 @@ def generate_mmt_refinement_cards(
         for make, model in [selected.split(";;;")]
     }
 
-    tys_by_mm: Dict[Tuple[str, str], Dict[str, Set[int]]] = {}
+    tys_by_mm: dict[tuple[str, str], dict[str, set[int]]] = {}
     for car in cars:
         make = car["make"]
         model = car["model"]
@@ -149,18 +146,14 @@ def generate_mmt_refinement_cards(
                 label="Trims",
                 values=trims,
                 selectors=dict(
-                    input=INPID_MMT_REFINE_TRIM,
-                    make=make,
-                    model=model,
+                    input=INPID_MMT_REFINE_TRIM, make=make, model=model
                 ),
             )
             + ToggleButtonGroup.make_buttons(
                 label="Years",
                 values=map(str, years),
                 selectors=dict(
-                    input=INPID_MMT_REFINE_YEAR,
-                    make=make,
-                    model=model,
+                    input=INPID_MMT_REFINE_YEAR, make=make, model=model
                 ),
             ),
         )

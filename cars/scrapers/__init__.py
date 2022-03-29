@@ -1,14 +1,35 @@
 from __future__ import annotations
 
+import json
 import sqlite3 as sql
+from abc import abstractmethod
 from dataclasses import asdict, dataclass, fields
-from typing import ClassVar, Iterable, Optional
+from functools import wraps
+from pathlib import Path
+from sqlite3 import Connection
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Concatenate,
+    Generator,
+    Iterable,
+    ParamSpec,
+    Type,
+    TypeVar,
+)
 
 from bitstruct import pack as bitpack
 from bitstruct import unpack as bitunpack
 from py9lib.db_ import mk_column_spec
+from py9lib.io_ import retry
+from webcolors import CSS2, CSS3, CSS21, HTML4, name_to_hex
+from xdg import xdg_cache_home
 
 from cars.util import CAR_DB
+
+P = ParamSpec("P")
+T = TypeVar("T")
 
 KNOWN_DRIVETRAINS = ("4WD", "AWD", "FWD", "RWD")
 KNOWN_BODIES = (
@@ -29,16 +50,62 @@ TRANSMISSIONS = ("auto", "manual")
 TRANSMISSION_VALS = (1, 0)
 
 
+def normalize_address(addr: str) -> str:
+    addr = addr.title().rstrip(".")
+    words = addr.split(" ")
+    for ix in [-1, -2]:
+        try:
+            words[ix] = {
+                "Ave": "Avenue",
+                "Blvd": "Boulevard",
+                "Dr": "Drive",
+                "Hwy": "Highway",
+                "Ln": "Lane",
+                "Rd": "Road",
+                "St": "Street",
+                "Tpke": "Turnpike",
+            }.get(words[ix], words[ix])
+        except IndexError:
+            continue
+    return " ".join(words)
+
+
 def normalize_body(body: str) -> str:
-    return {"Pickup": "Pickup Truck", "Station Wagon": "Wagon"}.get(body, body)
+    body = body.title() if body.lower() != "suv" else "SUV"
+    return {
+        "Convert": "Convertible",  # autotrader
+        "Hatch": "Hatchback",  # autotrader
+        "Pickup": "Pickup Truck",  # edmunds
+        "Station Wagon": "Wagon",  # edmunds
+        "Sport Utility": "SUV",  # autotrader
+        "Van": "Passenger Van",  # autotrader
+        "Truck": "Pickup Truck",
+    }.get(body, body)
 
 
 def normalize_fuel(fuel: str) -> str:
-    if "flex" in fuel.lower():
+    fuel = fuel.lower()
+    if fuel == "gasoline":
+        return "gas"
+    if "flex" in fuel:
         return "flex"
-    if fuel == "mild hybrid":
+    if "hybrid" in fuel:
         return "hybrid"
     return fuel
+
+
+def normalize_drivetrain(drivetrain: str) -> str:
+    return {
+        "all wheel drive": "AWD",
+        "front wheel drive": "FWD",
+        "rear wheel drive": "RWD",
+        "four wheel drive": "4WD",
+        "2 wheel drive - front": "FWD",
+        "4 wheel drive - rear wheel default": "4WD",
+        "4 wheel drive - front wheel default": "4WD",
+        "4 wheel drive": "4WD",
+        "2 wheel drive - rear": "RWD",
+    }.get(drivetrain.lower(), drivetrain)
 
 
 @dataclass
@@ -88,28 +155,77 @@ class YMMSAttr:
     is_auto: bool
     drivetrain: str
     body: str
+    source: str
 
     def __post_init__(self) -> None:
         self.fuel_type = normalize_fuel(self.fuel_type)
         assert self.fuel_type in KNOWN_FUEL_TYPES
 
+        self.drivetrain = normalize_drivetrain(self.drivetrain)
         assert self.drivetrain in KNOWN_DRIVETRAINS
 
         self.body = normalize_body(self.body)
         assert self.body in KNOWN_BODIES
+
+    def insert(self, conn: Connection) -> int:
+        yd = asdict(self)
+        row = conn.execute(
+            """ SELECT id FROM ymms_attrs
+                WHERE year = :year
+                  AND make = :make
+                  AND model = :model
+                  AND style = :style""",
+            yd,
+        ).fetchall()
+        if row:
+            return row[0][0]
+        else:
+            # language=sql
+            cur = conn.execute(
+                f"INSERT INTO ymms_attrs {mk_column_spec(yd)}", yd
+            )
+            return cur.lastrowid
 
 
 @dataclass
 class Dealership:
     address: str
     zip: str
-    dealer_name: str
+    name: str
     city: str
     state: str
     lat: float
     lon: float
     phone: str | None
     website: str | None
+
+    def insert(self, conn: Connection) -> int:
+        dd = asdict(self)
+        row = conn.execute(
+            """ SELECT id FROM dealerships
+                WHERE address = :address
+                  AND zip = :zip
+                  AND name = :name""",
+            dd,
+        ).fetchall()
+        if row:
+            conn.execute(
+                """ UPDATE dealerships
+                    SET
+                        website = coalesce(:website, website),
+                        phone = coalesce(:phone, phone)
+                    WHERE
+                        address = :address AND zip = :zip AND name = :name""",
+                dd,
+            )
+            return row[0][0]
+        else:
+            cur = conn.execute(
+                # language=sql
+                f"INSERT INTO dealerships {mk_column_spec(dd)}",
+                dd,
+            )
+            return cur.lastrowid
 
 
 @dataclass
@@ -118,17 +234,11 @@ class Listing:
     vin: str
     first_seen: int
     last_seen: int
-    dealer_address: str
-    dealer_zip: str
-    year: int
-    make: str
-    model: str
-    style: str
     mileage: int
     price: float
-    color_rgb_int: Optional[str]
-    color_rgb_ext: Optional[str]
-    history_flags: VehicleHistory
+    color_rgb_int: str | None
+    color_rgb_ext: str | None
+    history_flags: VehicleHistory | None
 
 
 @dataclass
@@ -137,58 +247,83 @@ class ListingWithContext:
     ymms_attr: YMMSAttr
     listing: Listing
 
-
-def insert_listings(details: Iterable[ListingWithContext]) -> None:
-
-    details = list(details)
-    if not details:
-        return
-
-    dealers = list(
-        {
-            (dt.dealership.address, dt.dealership.zip): asdict(dt.dealership)
-            for dt in details
-        }.values()
-    )
-    ymmss = list(
-        {
-            (
-                dt.ymms_attr.year,
-                dt.ymms_attr.make,
-                dt.ymms_attr.model,
-                dt.ymms_attr.style,
-            ): asdict(dt.ymms_attr)
-            for dt in details
-        }.values()
-    )
-
-    with sql.connect(CAR_DB) as conn:
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.executemany(
-            # language=sql
-            f"""
-            INSERT OR IGNORE INTO dealerships
-            {mk_column_spec(dealers[0])}
-            """,
-            dealers,
+    def insert(self, conn: Connection):
+        ld = asdict(self.listing)
+        ld["dealer_id"] = self.dealership.insert(conn)
+        ld["ymms_id"] = self.ymms_attr.insert(conn)
+        ld["history_flags"] = (
+            ld["history_flags"] and self.listing.history_flags.as_int
         )
-        conn.executemany(
-            # language=sql
-            f"""
-            INSERT OR IGNORE INTO ymms_attrs
-            {mk_column_spec(ymmss[0])}
-            """,
-            ymmss,
-        )
-        conn.executemany(
+
+        conn.execute(
             # language=sql
             f"""
             INSERT OR REPLACE INTO listings
-            {mk_column_spec(asdict(details[0].listing))}
-            """,
-            (
-                asdict(d.listing)
-                | {"history_flags": d.listing.history_flags.as_int}
-                for d in details
-            ),
+            {mk_column_spec(ld)}""",
+            ld,
         )
+
+
+def insert_listings(details: Iterable[ListingWithContext | None]) -> None:
+    details = [it for it in details if it is not None]
+    with sql.connect(CAR_DB) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        for lwx in details:
+            lwx.insert(conn)
+
+
+SC = TypeVar("SC", bound="ScraperState", covariant=True)
+
+
+def inject_state(
+    state_cls: Type[SC], /, *retry_args: Any, **retry_kwargs: Any
+) -> Callable[
+    Callable[Concatenate[SC, P], Generator[SC, None, None]], Callable[P, None]
+]:
+    def _wrapper(f: Callable[Concatenate[SC, P], Generator[SC, None, None]]):
+        @wraps(f)
+        @retry(*retry_args, **retry_kwargs)
+        def _wrapped(*args: P.args, **kwargs: P.kwargs):
+            state = state_cls.load()
+            for out_state in f(state, *args, **kwargs):
+                out_state.dump()
+
+        return _wrapped
+
+    return _wrapper
+
+
+@dataclass
+class ScraperState:
+    name: ClassVar[str]
+
+    @classmethod
+    def state_path(cls) -> Path:
+        return xdg_cache_home().joinpath(f"cars.{cls.name}.state")
+
+    def dump(self) -> None:
+        with self.state_path().open("w") as f:
+            json.dump(asdict(self), f, indent=4)
+
+    @classmethod
+    def load(cls: Type[SC]) -> SC:
+        try:
+            with cls.state_path().open() as f:
+                # noinspection PyArgumentList
+                return cls(**json.load(f))
+        except IOError:
+            return cls.new()
+
+    @classmethod
+    @abstractmethod
+    def new(cls: Type[SC]) -> SC:
+        ...
+
+
+def tryhard_name_to_hex(name: str) -> str | None:
+    for spec in [CSS3, CSS21, CSS2, HTML4]:
+        try:
+            return name_to_hex(name.lower(), spec).lstrip("#").upper()  # type: ignore
+        except ValueError:
+            continue
+    return None

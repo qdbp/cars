@@ -1,5 +1,3 @@
-from typing import List
-
 from dash import dependencies as dd
 from dash.exceptions import PreventUpdate
 
@@ -12,12 +10,9 @@ from . import deferred_callback
 
 @deferred_callback(
     dd.Output(INPID_STATE, "options"),
-    [
-        dd.Input(INPID_ZIPCODE, "value"),
-        dd.Input(INPID_MAX_DIST, "value"),
-    ],
+    [dd.Input(INPID_ZIPCODE, "value"), dd.Input(INPID_MAX_DIST, "value")],
 )
-def populate_state_options(zipcode: str, max_miles: int) -> List[DashOptions]:
+def populate_state_options(zipcode: str, max_miles: int) -> list[DashOptions]:
     """
     Generates the state refinement menu.
     """

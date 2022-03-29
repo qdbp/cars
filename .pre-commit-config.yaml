@@ -1,13 +1,4 @@
 repos:
-  # AUTOFLAKE
-  - hooks:
-      - id: autoflake
-        args:
-          - --in-place
-          - --remove-unused-variables
-          - --remove-all-unused-imports
-    repo: https://github.com/myint/autoflake
-    rev: ''
   # BLACK-   id: autoflake
   - hooks:
       - id: black
@@ -15,7 +6,7 @@ repos:
         args:
           - --line-length=80
     repo: https://github.com/psf/black
-    rev: 20.8b1
+    rev: 22.3.0
   # DOCFORMATTER
   - hooks:
       - id: docformatter
@@ -25,7 +16,7 @@ repos:
           - --pre-summary-newline
           - --make-summary-multi-line
     repo: https://github.com/myint/docformatter
-    rev: ''
+    rev: 'v1.4'
   # ISORT
   - hooks:
       - id: isort
@@ -33,21 +24,21 @@ repos:
           - --profile=black
           - --line-length=80
     repo: https://github.com/pycqa/isort
-    rev: ''
+    rev: '5.10.1'
   # LOCAL HOOKS
   - repo: local
     hooks:
       # mypy (local)
-      - id: mypy
-        name: mypy
-        language: system
-        entry: /home/main/venvs/cars/bin/mypy
-        args:
-          - --config-file=mypy.ini
-        exclude: tests
-        types:
-          - python
-        files: cars
+      # - id: mypy
+      #   name: mypy
+      #   language: system
+      #   entry: /home/main/venvs/cars/bin/mypy
+      #   args:
+      #     - --config-file=mypy.ini
+      #   exclude: tests
+      #   types:
+      #     - python
+      #   files: cars
       # pytest
       - id: pytest
         name: pytest
@@ -59,15 +50,15 @@ repos:
         types:
           - python
       # version bump
-      - id: autoversion
-        name: autoversion
-        entry: /usr/bin/bash
-        language: system
-        args:
-          - -c
-          - >
-            sed -ri -e "s/(__version__ = .[0-9]+\.[0-9]+\.)[0-9]+/\1$(date +%Y%m%d%H%M%S)/g" setup.py
-            && git add setup.py
-        pass_filenames: false
-        types:
-          - python
+      # - id: autoversion
+      #   name: autoversion
+      #   entry: /usr/bin/bash
+      #   language: system
+      #   args:
+      #     - -c
+      #     - >
+      #       sed -ri -e "s/(__version__ = .[0-9]+\.[0-9]+\.)[0-9]+/\1$(date +%Y%m%d%H%M%S)/g" setup.py
+      #       && git add setup.py
+      #   pass_filenames: false
+      #   types:
+      #     - python

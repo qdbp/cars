@@ -1,66 +1,47 @@
 from __future__ import annotations
 
-import asyncio
-import json
 import sqlite3 as sql
 import time
 from argparse import ArgumentParser, Namespace
-from asyncio import run
 from atexit import register
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
-from typing import AsyncIterable, Literal
+from functools import partial
+from typing import ClassVar, Iterable, Literal
 from urllib.parse import urlencode
 
-from aiohttp import ClientError, ClientSession
-from py9lib.async_ import aenumerate, aratelimit, retry
-from tqdm import tqdm
-from webcolors import CSS2, CSS3, CSS21, HTML4, name_to_hex
+from py9lib.io_ import ratelimit
+from requests import ReadTimeout, Session
 
 from cars import LOG
 from cars.scrapers import (
     Dealership,
     Listing,
     ListingWithContext,
+    ScraperState,
     VehicleHistory,
     YMMSAttr,
+    inject_state,
     insert_listings,
+    normalize_address,
+    tryhard_name_to_hex,
 )
 from cars.util import CAR_DB
 
 SOURCE_NAME = "truecar"
-URL_AGG = "..."
-URL_LISTING = "https://www.truecar.com/abp/api/vehicles/used/listings/{}/"
-URL_TEMPLATE_LOC = "https://www.truecar.com/abp/api/geographic/locations/{}"
 
 
-@dataclass()
-class TruecarState:
+@dataclass
+class TruecarState(ScraperState):
+    name: ClassVar[str] = SOURCE_NAME
     scrape_started_unix: int
     scrape_finished_unix: int
     start_mileage: int
-    fn: str = (default_fn := ".scraper_truecar")
 
     @classmethod
-    def load(cls, fn: str = default_fn) -> TruecarState | None:
-        try:
-            with open(fn, "r") as f:
-                return cls(**json.load(f))
-        except Exception:
-            return None
-
-    def dump(self) -> None:
-        with open(self.fn, "w") as f:
-            json.dump(vars(self), f, indent=4)
-
-
-def tryhard_name_to_hex(name: str) -> str | None:
-    for spec in [CSS3, CSS21, CSS2, HTML4]:
-        try:
-            return name_to_hex(name.lower(), spec)  # type: ignore
-        except ValueError:
-            continue
-    return None
+    def new(cls) -> TruecarState:
+        return TruecarState(int(time.time()), -1, 0)
 
 
 def truecar_get_rgb_color(
@@ -75,14 +56,13 @@ def truecar_get_rgb_color(
         if cstr is not None:
             out = tryhard_name_to_hex(cstr)
             if out is not None:
-                return out.lstrip("#").upper()
+                return out
     return None
 
 
-async def get_listings_shard_sqlite(
-    sess: ClientSession,
-    limiter: aratelimit,
-    progress: tqdm,
+def get_listings_shard_sqlite(
+    sess: Session,
+    limiter: ratelimit,
     *,
     electric: bool = True,
     hybrid: bool = True,
@@ -93,7 +73,7 @@ async def get_listings_shard_sqlite(
     max_price: int = 2500000,
     min_year: int = 1900,
     max_year: int = 2030,
-) -> AsyncIterable[ListingWithContext]:
+) -> Iterable[ListingWithContext]:
 
     """
     Workhorse function to download car data from Truecar based on query limits.
@@ -125,11 +105,11 @@ async def get_listings_shard_sqlite(
     seen = 0
     params.append(("page", page))
 
-    limited_get = limiter(sess.get)
+    limited_get = limiter(partial(sess.get, timeout=30))
 
     while True:
-        resp = await limited_get(f"{base_url}?{urlencode(params)}")
-        j = await resp.json()
+        resp = limited_get(f"{base_url}?{urlencode(params)}")
+        j = resp.json()
 
         for listing in j["listings"]:
 
@@ -150,17 +130,15 @@ async def get_listings_shard_sqlite(
 
             dealer_dict = listing["dealership"]
             loc = dealer_dict["location"]
-            dealer_addr = loc["address1"] + (
-                "" if loc["address2"] is None else " " + loc["address2"]
-            )
+            dealer_addr = normalize_address(loc["address1"])
 
             if vehicle["mpg_highway"] is None or vehicle["mpg_city"] is None:
                 continue
 
             dealership = Dealership(
                 address=dealer_addr,
-                zip=(dealer_zip := loc["postal_code"]),
-                dealer_name=dealer_dict["name"],
+                zip=loc["postal_code"],
+                name=dealer_dict["name"],
                 lat=loc["lat"],
                 lon=loc["lng"],
                 city=loc["city"],
@@ -169,18 +147,18 @@ async def get_listings_shard_sqlite(
                 website=dealer_dict["links"]["website_link"],
             )
             ymms_attr = YMMSAttr(
-                year=(year := vehicle["year"]),
-                make=(make := vehicle["make"]),
-                model=(model := vehicle["model"]),
-                style=(style := vehicle["style"]),
+                year=vehicle["year"],
+                make=vehicle["make"],
+                model=vehicle["model"],
+                style=vehicle["style"],
                 trim_slug=vehicle["trim_slug"],
                 mpg_city=vehicle["mpg_city"],
                 mpg_hwy=vehicle["mpg_highway"],
                 fuel_type=vehicle["fuel_type"].lower(),
                 body=vehicle["body_style"],
                 drivetrain=vehicle["drive_train"],
-                # engine=vehicle["engine"],
                 is_auto=vehicle["transmission"] == "Automatic",
+                source=SOURCE_NAME,
             )
 
             listing = Listing(
@@ -190,17 +168,11 @@ async def get_listings_shard_sqlite(
                     datetime.fromisoformat(listing["listed_at"]).timestamp()
                 ),
                 last_seen=round(time.time()),
-                dealer_address=dealer_addr,
-                dealer_zip=dealer_zip,
-                year=year,
-                make=make,
-                model=model,
-                style=style,
                 mileage=vehicle["mileage"],
                 price=listing["pricing"]["total_price"],
-                color_rgb_int=truecar_get_rgb_color(vehicle, "exterior"),
+                color_rgb_int=truecar_get_rgb_color(vehicle, "interior"),
                 # TODO parse interior to hex as well.
-                color_rgb_ext=truecar_get_rgb_color(vehicle, "interior"),
+                color_rgb_ext=truecar_get_rgb_color(vehicle, "exterior"),
                 history_flags=history,
             )
 
@@ -212,26 +184,22 @@ async def get_listings_shard_sqlite(
         n_new_cars = len(j["listings"])
 
         seen += n_new_cars
-        progress.update(n_new_cars)
+        # progress.update(n_new_cars)
 
         if seen >= total or n_new_cars == 0:
             break
 
 
-@retry(
-    [ClientError, asyncio.TimeoutError],
+@inject_state(
+    TruecarState,
+    catch=[TimeoutError, ReadTimeout],
     backoff_start=10,
     backoff_rate=10,
     log_fun=LOG.error,
-)  # type: ignore
-async def run_scraper(args: Namespace) -> None:
+)
+def run_scraper(state: TruecarState, args: Namespace) -> None:
 
-    LOG.info("Starting Truecar scrape.")
-
-    if (state := TruecarState.load()) is None or args.force_restart:
-        state = TruecarState(-1, -1, 1)
-    else:
-        LOG.info(f"Restarting scrape with state {state}.")
+    LOG.info(f"Starting scrape with state {state}")
 
     if state.scrape_finished_unix < state.scrape_started_unix:
         start_mileage = state.start_mileage
@@ -247,47 +215,47 @@ async def run_scraper(args: Namespace) -> None:
 
     state.scrape_started_unix = int(time.time())
 
-    limiter = aratelimit(3, args.ratelimit)
-    session = ClientSession()
+    limiter = ratelimit(3, args.ratelimit)
+    session = Session()
+    insert_executor = ThreadPoolExecutor(max_workers=1)
 
-    listings = []
-    progress = tqdm(unit=" cars")
-
-    async with session:
+    with session:
         while True:
             max_mileage = min(start_mileage + mileage_delta, mileage_cap)
-            count = 1
-
-            progress.set_description_str(
-                f"Scraping mileage {start_mileage} -> {max_mileage}"
-            )
-
-            async for count, listing in aenumerate(
+            listings = list(
                 get_listings_shard_sqlite(
                     session,
-                    progress=progress,
-                    limiter=limiter,
+                    limiter,
                     min_mileage=start_mileage,
                     max_mileage=max_mileage,
                 )
-            ):
-                listings.append(listing)
+            )
+            if len(listings) == 0 and state.start_mileage >= 500_000:
+                yield state.new()
+                return
 
-            insert_listings(listings)
-            listings.clear()
+            insert_executor.submit(insert_listings, listings)
 
             # mileage_delta < 5 is bugged on the server side
             start_mileage += mileage_delta
-            mileage_delta = max(5, int(mileage_delta * target_total / count))
+            mileage_delta = max(
+                5, int(mileage_delta * target_total / len(listings))
+            )
+
+            LOG.info(
+                f"Inserted {len(listings)} listings: "
+                f"mileage {start_mileage}->{start_mileage + mileage_delta}"
+            )
 
             state.start_mileage = start_mileage
-            state.dump()
+            yield state
+            listings.clear()
 
             if max_mileage >= mileage_cap:
                 break
 
     state.scrape_finished_unix = int(time.time())
-    state.dump()
+    yield state
 
 
 def init_parser(parser: ArgumentParser) -> None:
@@ -302,4 +270,10 @@ def init_parser(parser: ArgumentParser) -> None:
         action="store_true",
         help="trash state and restart from scratch",
     )
-    parser.set_defaults(exe=lambda args: run(run_scraper(args)))
+    parser.set_defaults(exe=lambda args: run_scraper(args))
+
+
+if __name__ == "__main__":
+    parser = ArgumentParser()
+    init_parser(parser)
+    run_scraper(parser.parse_args())

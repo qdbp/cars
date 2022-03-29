@@ -1,4 +1,4 @@
-from typing import Dict, Iterable, List, Set, Tuple
+from typing import Iterable
 
 import dash
 import dash_bootstrap_components as dbc
@@ -100,10 +100,10 @@ class ToggleButtonGroup:
     TYPE_SELECTOR = "_btn_type"
     KEY_SELECTOR = "key"
 
-    HAVE_CALLBACKS: Set[Tuple[str, ...]] = set()
+    HAVE_CALLBACKS: set[tuple[str, ...]] = set()
 
     @classmethod
-    def selector(cls, **matches: str) -> Dict[str, str]:
+    def selector(cls, **matches: str) -> dict[str, str]:
         """
         Returns a dictionary input/output selector for a bg, with key=ALL.
 
@@ -122,9 +122,9 @@ class ToggleButtonGroup:
         *,
         label: str,
         values: Iterable[str],
-        selectors: Dict[str, str],
+        selectors: dict[str, str],
         defaults: Iterable[bool] = None,
-    ) -> List[dbc.Button]:
+    ) -> list[dbc.Button]:
         values = list(values)
         defaults = list(defaults) if defaults else ([True] * len(values))
 
@@ -164,7 +164,7 @@ class ToggleButtonGroup:
         ]
 
     @classmethod
-    def stage_deferred_callbacks(cls, selector_keys: Tuple[str, ...]) -> None:
+    def stage_deferred_callbacks(cls, selector_keys: tuple[str, ...]) -> None:
         """
         Enables the appropriate client side callbacks.
 
@@ -282,7 +282,7 @@ ToggleButtonGroup.stage_deferred_callbacks(CAR_OPTS_SELECTORS)
 
 
 def setup_dash_layout(app: Dash, sk: DivSkeleton) -> dash.Dash:
-    def create_sliders() -> Tuple[
+    def create_sliders() -> tuple[
         RangeSlider, RangeSlider, RangeSlider, RangeSlider
     ]:
         slider_height = 460
@@ -347,16 +347,11 @@ def setup_dash_layout(app: Dash, sk: DivSkeleton) -> dash.Dash:
     ):
         sk.fill(
             div_id,
-            [
-                dbc.Badge(name, color="primary", className="slider"),
-                slider,
-            ],
+            [dbc.Badge(name, color="primary", className="slider"), slider],
         )
     top_selectors = [
         dbc.Alert(
-            "Select your location.",
-            id="alert-loc-picker",
-            color="primary",
+            "Select your location.", id="alert-loc-picker", color="primary"
         ),
         Dropdown(
             id=INPID_ZIPCODE,
@@ -378,9 +373,7 @@ def setup_dash_layout(app: Dash, sk: DivSkeleton) -> dash.Dash:
             **PERSIST_ARGS,
         ),
         dbc.Alert(
-            "Limit dealership states.",
-            id="alert-state-picker",
-            color="primary",
+            "Limit dealership states.", id="alert-state-picker", color="primary"
         ),
         Dropdown(
             id=INPID_STATE,
@@ -392,22 +385,17 @@ def setup_dash_layout(app: Dash, sk: DivSkeleton) -> dash.Dash:
             id="plot-info-flex",
             children=[
                 dbc.Button(
-                    children="Plot Cars Now!",
-                    id=PLOT_BUTTON,
-                    color="success",
+                    children="Plot Cars Now!", id=PLOT_BUTTON, color="success"
                 ),
                 Div(
                     id=PLOT_ALERT_BOX,
                     children=dbc.Alert(
-                        id=PLOT_ALERT,
-                        children="",
-                        color="danger",
+                        id=PLOT_ALERT, children="", color="danger"
                     ),
                     hidden=True,
                 ),
                 dbc.Alert(
-                    "Plot does not refresh automatically.",
-                    color="light",
+                    "Plot does not refresh automatically.", color="light"
                 ),
             ],
             style={"display": "flex", "flex-direction": "column-reverse"},
@@ -496,10 +484,7 @@ def setup_dash_layout(app: Dash, sk: DivSkeleton) -> dash.Dash:
                 storage_type="memory",
                 data=etl.RAW_CLIENT_DATA,
             ),
-            Store(
-                id=STORE_FILTERED_CARS,
-                storage_type="session",
-            ),
+            Store(id=STORE_FILTERED_CARS, storage_type="session"),
             Div(id="devnull"),
         ],
     )

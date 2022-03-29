@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, List, Union
+from typing import Any, Callable, Union
 
 from dash import Dash
 
@@ -8,7 +8,7 @@ from cars import LOG
 
 
 class deferred_registry:
-    REGISTRY: List[AnyDeferred] = []
+    REGISTRY: list[AnyDeferred] = []
 
     @classmethod
     def add(cls, cb: AnyDeferred) -> None:
@@ -47,13 +47,7 @@ class deferred_callback:
 
 
 class deferred_clientside_callback:
-    def __init__(
-        self,
-        name: str,
-        /,
-        *args: Any,
-        **kwargs: Any,
-    ) -> None:
+    def __init__(self, name: str, /, *args: Any, **kwargs: Any) -> None:
 
         self.name = name
         self.args = args

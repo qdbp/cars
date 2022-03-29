@@ -2,7 +2,7 @@
 
 from argparse import ArgumentParser
 
-from cars.scrapers.edmunds import init_parser as init_edmunds
+from cars.scrapers.autotrader import init_parser as init_auotrader
 from cars.scrapers.truecar import init_parser as init_truecar
 
 
@@ -12,7 +12,7 @@ def main() -> None:
     sub = parser.add_subparsers()
 
     init_truecar(sub.add_parser("scrape-truecar"))
-    init_edmunds(sub.add_parser("scrape-edmunds"))
+    init_auotrader(sub.add_parser("scrape-autotrader"))
 
     args = parser.parse_args()
     args.exe(args)

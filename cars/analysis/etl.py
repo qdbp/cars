@@ -1,10 +1,10 @@
+from __future__ import annotations
+
 import os
 import sqlite3 as sql
 from functools import lru_cache
 from gc import collect
-from typing import Dict, Iterable, List, Mapping
-from typing import Optional as Opt
-from typing import Set, Tuple, TypedDict, TypeVar, Union
+from typing import Iterable, Mapping, Set, Tuple, TypedDict, TypeVar, Union
 
 import pandas as pd
 from numpy import int32, int64, uint32, uint64
@@ -56,7 +56,7 @@ def load_attrs() -> DataFrame:
             SELECT 
                 year, make, model, style, trim_slug, style,
                 (0.45 * mpg_hwy + 0.55 * mpg_city) as mpg,
-                fuel_type, body, drivetrain, is_auto, engine
+                fuel_type, body, drivetrain, is_auto
             FROM ymms_attrs
             """,
             conn,
@@ -86,21 +86,21 @@ DEALERS: DataFrame
 ATTRS: DataFrame
 
 # caches
-ZIP_DEALER_DISTANCE: Dict[str, Series] = {}
+ZIP_DEALER_DISTANCE: dict[str, Series] = {}
 TRIMS_BY_YEAR: Mapping[int, Set[str]]
-TRIM_YEARS_BY_MM: Mapping[str, Dict[str, Dict[str, List[int]]]]
-MMS: List[Tuple[str, str]]
+TRIM_YEARS_BY_MM: Mapping[str, dict[str, dict[str, list[int]]]]
+MMS: list[Tuple[str, str]]
 
 
 class RawClientData(TypedDict):
-    attrs: List[Tuple[int, str, str, str, bool, str, str, str]]
-    prop_to_ix: Dict[str, Dict[Union[str, int], int]]
+    attrs: list[Tuple[int, str, str, str, bool, str, str, str]]
+    prop_to_ix: dict[str, dict[Union[str, int], int]]
 
 
 RAW_CLIENT_DATA: RawClientData
 
 
-def reverse_index(vals: Iterable[T]) -> Dict[T, int]:
+def reverse_index(vals: Iterable[T]) -> dict[T, int]:
     return {v: ix for ix, v in enumerate(vals)}
 
 
@@ -150,7 +150,6 @@ def refresh_universe() -> None:
                     "drivetrain",
                     "fuel_type",
                     "body",
-                    "engine",
                 ],
             ]
             .agg(lambda s: s.to_dict(), axis=1)
@@ -171,9 +170,7 @@ def get_dealers_in_range(zipcode: str, max_miles: int) -> DataFrame:
     if (distance := ZIP_DEALER_DISTANCE.get(zipcode)) is None:
         q_lat, q_lon = LATLONG_BY_ZIP[zipcode]
         distance = great_circle_miles(
-            DEALERS.loc[:, ["lon", "lat"]].values,
-            q_lon,
-            q_lat,
+            DEALERS.loc[:, ["lon", "lat"]].values, q_lon, q_lat
         )
         distance = ZIP_DEALER_DISTANCE[zipcode] = Series(
             distance, index=DEALERS.index
@@ -186,7 +183,7 @@ def get_dealers_in_range(zipcode: str, max_miles: int) -> DataFrame:
 
 
 @lru_cache(maxsize=32)
-def get_states_in_range(zipcode: str, max_miles: int) -> List[str]:
+def get_states_in_range(zipcode: str, max_miles: int) -> list[str]:
     return [*get_dealers_in_range(zipcode, max_miles)["state"].unique()]
 
 
@@ -207,7 +204,7 @@ def filter_cars_by_attr_selectors(
     fuel_types: Tuple[str, ...],
     bodies: Tuple[str, ...],
     ymmt_only: bool = True,
-) -> Opt[DataFrame]:
+) -> DataFrame | None:
 
     """
     Selects available cars within mpg and year bounds.
@@ -226,8 +223,7 @@ def filter_cars_by_attr_selectors(
         query += f"&(is_auto == {int(transmissions[0] == 'auto')})"
 
     for col, selectors in zip(
-        ["drivetrain", "fuel_type", "body"],
-        [drivetrains, fuel_types, bodies],
+        ["drivetrain", "fuel_type", "body"], [drivetrains, fuel_types, bodies]
     ):
         assert len(selectors) > 0
         query += (
@@ -257,6 +253,7 @@ def get_specific_cars(ymmts: Iterable[Tuple[int, str, str, str]]) -> DataFrame:
     return selector.join(ATTRS, how="inner")
 
 
+# noinspection SqlResolve
 def query_listings(
     ymms_selector: DataFrame,
     dealer_ids: DataFrame,

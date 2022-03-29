@@ -62,3 +62,11 @@ CREATE TABLE IF NOT EXISTS
     website     TEXT,
     PRIMARY KEY (address, zip)
 ) WITHOUT ROWID;
+
+
+CREATE TABLE IF NOT EXISTS
+    autotrader_listings
+(
+    listing_id INTEGER PRIMARY KEY,
+    first_seen INTEGER
+) WITHOUT ROWID;

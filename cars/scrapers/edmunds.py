@@ -1,18 +1,16 @@
 import gzip
 import json
-import re
 import sys
 import time
 from argparse import ArgumentParser
-from sqlite3 import connect
 from typing import Any
 
-from geopy.geocoders import Nominatim
 from requests import Session
 from selenium.webdriver.common.by import By
 from seleniumwire.request import Request, Response
 from seleniumwire.webdriver import Firefox, FirefoxOptions
 
+from cars.analysis.geo import tryhard_geocode
 from cars.scrapers import (
     Dealership,
     Listing,
@@ -20,105 +18,27 @@ from cars.scrapers import (
     VehicleHistory,
     YMMSAttr,
     insert_listings,
+    normalize_address,
 )
-from cars.util import CAR_DB
 
+SOURCE_NAME = "edmunds"
 BASE_URL = "https://www.edmunds.com"
-NOMINATIM = Nominatim(
-    domain="127.0.0.1:8080", user_agent="en-car-shopping-tool", scheme="http"
-)
-geocode = NOMINATIM.geocode
-
-
-def patch_up_addr(addr: str) -> str:
-    addr = addr.replace("US Hwy", "US")
-    addr = re.sub(
-        r"(?:rt|Rt|Rte|rte) ([0-9]+) (?:East|West|North|South|E|W|N|S)",
-        r"Rte \1",
-        addr,
-    )
-    addr = addr.replace("Tpke", "Turnpike")
-    return addr
-
-
-CENSUS_PATH = "https://geocoding.geo.census.gov/geocoder/locations/address"
 SESSION: Session
 
 
-def geocode_census_zip(addr: str, zipcode: str) -> tuple[float, float]:
-    """
-    Args:
-        addr: the US address to look up
-        zipcode: the zipcode within which to look
-
-    Returns:
-        lat, lon of address as known by census.gov
-
-    """
-    raw = SESSION.get(
-        f"{CENSUS_PATH}?street={addr}&zip={zipcode}&benchmark=2020&format=json"
-    ).json()
-    try:
-        coords = raw["result"]["addressMatches"][0]["coordinates"]
-    except IndexError as e:
-        raise ValueError(f"Address {addr} not found at {zipcode}") from e
-    return coords["y"], coords["x"]
-
-
-def geocode_census_city_state(
-    addr: str, city: str, state: str
-) -> tuple[float, float]:
-    """
-    Args:
-        addr: the US address to look up
-        city: the city
-        state: the state
-    Returns:
-        lat, lon of address as known by census.gov
-
-    """
-    raw = SESSION.get(
-        f"{CENSUS_PATH}?street={addr}&city={city}&state={state}&benchmark=2020&format=json"
-    ).json()
-    try:
-        coords = raw["result"]["addressMatches"][0]["coordinates"]
-    except IndexError as e:
-        raise ValueError(f"Address {addr} not found at {city}, {state}") from e
-    return coords["y"], coords["x"]
-
-
 def edmunds_resolve_latlon(da_dict: dict[str, Any]) -> tuple[float, float]:
-    addr = da_dict["street"]
-    zipcode = da_dict["zip"]
-    with connect(CAR_DB) as conn:
-        rows = conn.execute(
-            f"""
-            SELECT lat, lon from dealerships
-            WHERE address like '{addr}' AND zip like '{zipcode}'
-            """
-        ).fetchall()
-    if rows:
-        return rows[0][0], rows[0][1]
-
-    try:
-        lat, lon = geocode_census_zip(addr, zipcode)
-    except ValueError:
-        state = da_dict["stateCode"]
-        city = da_dict["city"]
-        try:
-            lat, lon = geocode_census_city_state(addr, city, state)
-        except ValueError:
-            gc_info = geocode(
-                query=dict(street=addr, city=city, state=state, country="U.S."),
-            )
-            if gc_info is None:
-                raise KeyError(f"No valid lat/lon for {addr}/{zipcode}")
-            lat = round(gc_info.latitude, 6)
-            lon = round(gc_info.longitude, 6)
-    return lat, lon
+    return tryhard_geocode(
+        SESSION,
+        da_dict["street"],
+        da_dict["zip"],
+        state=da_dict["state"],
+        city=da_dict["city"],
+    )
 
 
-def parse_edmunds_listing(listing_dict: dict[str, Any]) -> ListingWithContext:
+def parse_edmunds_listing(
+    listing_dict: dict[str, Any]
+) -> ListingWithContext | None:
     dd = listing_dict["dealerInfo"]
     da_dict = dd["address"]
 
@@ -130,13 +50,17 @@ def parse_edmunds_listing(listing_dict: dict[str, Any]) -> ListingWithContext:
         else None
     )
 
-    da_dict["street"] = patch_up_addr(da_dict["street"])
-    lat, lon = edmunds_resolve_latlon(da_dict)
+    da_dict["street"] = normalize_address(da_dict["street"])
+
+    try:
+        lat, lon = edmunds_resolve_latlon(da_dict)
+    except ValueError:
+        return None
 
     dealership = Dealership(
         address=da_dict["street"],
         zip=da_dict["zip"],
-        dealer_name=dd["name"],
+        name=dd["name"],
         city=da_dict["city"],
         state=da_dict["stateCode"],
         lat=lat,
@@ -148,12 +72,6 @@ def parse_edmunds_listing(listing_dict: dict[str, Any]) -> ListingWithContext:
     veh = listing_dict["vehicleInfo"]
     si = veh["styleInfo"]
     pi = veh["partsInfo"]
-    dt_map = {
-        "all wheel drive": "AWD",
-        "front wheel drive": "FWD",
-        "rear wheel drive": "RWD",
-        "four wheel drive": "4WD",
-    }
     ymms_attr = YMMSAttr(
         year=si["year"],
         make=si["make"],
@@ -164,8 +82,9 @@ def parse_edmunds_listing(listing_dict: dict[str, Any]) -> ListingWithContext:
         mpg_hwy=si["fuel"]["epaHighwayMPG"],
         fuel_type=pi["engineType"].lower(),
         body=si["bodyType"],
-        drivetrain=dt_map[pi["driveTrain"]],
+        drivetrain=pi["driveTrain"],
         is_auto=pi["transmission"] == "Automatic",
+        source=SOURCE_NAME,
     )
 
     hi = listing_dict["historyInfo"]
@@ -185,7 +104,7 @@ def parse_edmunds_listing(listing_dict: dict[str, Any]) -> ListingWithContext:
     vci = vc["interior"]
     vce = vc["exterior"]
     listing = Listing(
-        source="edmunds",
+        source=SOURCE_NAME,
         vin=listing_dict["vin"],
         first_seen=listing_dict["firstPublishedDate"] // 1000,
         last_seen=int(time.time()),
@@ -195,12 +114,6 @@ def parse_edmunds_listing(listing_dict: dict[str, Any]) -> ListingWithContext:
         color_rgb_ext=None
         if "r" not in vce
         else f"{vce['r']:02X}{vce['g']:02X}{vce['b']:02X}",
-        dealer_address=dealership.address,
-        dealer_zip=dealership.zip,
-        year=ymms_attr.year,
-        make=ymms_attr.make,
-        model=ymms_attr.model,
-        style=ymms_attr.style,
         mileage=veh["mileage"],
         price=listing_dict["prices"]["displayPrice"],
         history_flags=hist,

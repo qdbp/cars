@@ -1,5 +1,5 @@
 from logging import INFO
-from typing import Any, Iterable, List, TypedDict, Union
+from typing import Any, Iterable, TypedDict
 
 import plotly
 
@@ -17,7 +17,7 @@ class DashOptions(TypedDict):
     value: Any
 
 
-def opts_from_vals(vals: Iterable[Union[int, str]]) -> List[DashOptions]:
+def opts_from_vals(vals: Iterable[int | str]) -> list[DashOptions]:
     """
     Makes a dict of {'value': x, 'label': x} for simple cases.
     """

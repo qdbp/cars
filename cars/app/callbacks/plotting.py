@@ -1,6 +1,6 @@
-from typing import Any, Dict, List
-from typing import Optional as Opt
-from typing import Tuple, Union
+from __future__ import annotations
+
+from typing import Any, Tuple, Union
 
 import dash_html_components as html
 import pandas as pd
@@ -108,9 +108,7 @@ def plot_listings(listings: DataFrame) -> Graph:
                     "engine",
                 ]
             ],
-            hoverlabel=dict(
-                bgcolor="#F8F5F0",
-            ),
+            hoverlabel=dict(bgcolor="#F8F5F0"),
             hovertemplate=(
                 '<b style="color: green;">$%{customdata[8]}</i><br>'
                 "<i>%{customdata[0]}</i><br>"
@@ -143,11 +141,7 @@ def plot_listings(listings: DataFrame) -> Graph:
     fig.update_yaxes(automargin=True)
     fig.update_xaxes(automargin=True)
 
-    graph = Graph(
-        id=INPID_GRAPH,
-        config=dict(displayModeBar=False),
-        figure=fig,
-    )
+    graph = Graph(id=INPID_GRAPH, config=dict(displayModeBar=False), figure=fig)
 
     return graph
 
@@ -158,9 +152,7 @@ def plot_listings(listings: DataFrame) -> Graph:
     dd.Output(PLOT_ALERT, "children"),
     dd.Output(PLOT_ALERT, "color"),
     dd.Output(PLOT_ALERT_BOX, "hidden"),
-    [
-        dd.Input("input-matrix-button", "n_clicks"),
-    ],
+    [dd.Input("input-matrix-button", "n_clicks")],
     [
         dd.State(INPID_ZIPCODE, "value"),
         dd.State(INPID_MAX_DIST, "value"),
@@ -197,18 +189,18 @@ def plot_listings(listings: DataFrame) -> Graph:
     prevent_inital_call=True,
 )
 def generate_filtered_graph(
-    n_clicks: Opt[int],
-    zipcode: Opt[str],
+    n_clicks: int | None,
+    zipcode: str | None,
     max_miles: int,
-    picked_states: Opt[List[str]],
-    picked_state_opts: List[Dict[str, str]],
+    picked_states: list[str | None],
+    picked_state_opts: list[dict[str, str]],
     lim_price: Tuple[int, int],
     lim_mileage: Tuple[int, int],
-    refine_trim: List[bool],
-    refine_trim_id: List[Dict[str, str]],
-    refine_year: List[bool],
-    refine_year_id: List[Dict[str, str]],
-    filtered_attrs: List[Dict[str, Any]],
+    refine_trim: list[bool],
+    refine_trim_id: list[dict[str, str]],
+    refine_year: list[bool],
+    refine_year_id: list[dict[str, str]],
+    filtered_attrs: list[dict[str, Any]],
 ) -> Tuple[Any, bool, str, str, bool]:
     """
     Generates the scatter plot based on selected car and listing params.
@@ -304,8 +296,8 @@ def generate_filtered_graph(
     prevent_initial_call=True,
 )
 def fill_in_link(
-    click_data: Opt[Dict[str, Any]]
-) -> Tuple[Union[str, List[Component]], str]:
+    click_data: dict[str, Any | None]
+) -> Tuple[Union[str, list[Component]], str]:
     """
     Generates extra information when a scatter plot point is clicked.
     """
