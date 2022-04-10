@@ -1,5 +1,5 @@
 repos:
-  # BLACK-   id: autoflake
+  # BLACK
   - hooks:
       - id: black
         language_version: python3
@@ -25,40 +25,3 @@ repos:
           - --line-length=80
     repo: https://github.com/pycqa/isort
     rev: '5.10.1'
-  # LOCAL HOOKS
-  - repo: local
-    hooks:
-      # mypy (local)
-      # - id: mypy
-      #   name: mypy
-      #   language: system
-      #   entry: /home/main/venvs/cars/bin/mypy
-      #   args:
-      #     - --config-file=mypy.ini
-      #   exclude: tests
-      #   types:
-      #     - python
-      #   files: cars
-      # pytest
-      - id: pytest
-        name: pytest
-        language: system
-        entry: /home/main/venvs/cars/bin/pytest
-        args:
-          - tests
-        pass_filenames: false
-        types:
-          - python
-      # version bump
-      # - id: autoversion
-      #   name: autoversion
-      #   entry: /usr/bin/bash
-      #   language: system
-      #   args:
-      #     - -c
-      #     - >
-      #       sed -ri -e "s/(__version__ = .[0-9]+\.[0-9]+\.)[0-9]+/\1$(date +%Y%m%d%H%M%S)/g" setup.py
-      #       && git add setup.py
-      #   pass_filenames: false
-      #   types:
-      #     - python

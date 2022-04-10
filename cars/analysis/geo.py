@@ -57,6 +57,24 @@ def great_circle_miles(p0: np.ndarray, lon1: float, lat1: float) -> np.ndarray:
 CENSUS_PATH = "http://geocoding.geo.census.gov/geocoder/locations/address"
 
 
+def _geocode_census_kwargs(
+    session: Session, /, **kwargs: str
+) -> tuple[float, float]:
+    raw = session.get(
+        CENSUS_PATH,
+        timeout=30,
+        params=kwargs | dict(benchmark="2020", format="json"),
+    ).json()
+    try:
+        coords = raw["result"]["addressMatches"][0]["coordinates"]
+    except IndexError as e:
+        raise ValueError(
+            f"Could not get census coords from "
+            f"{','.join(f'{k}={v}' for k, v in kwargs.items())}"
+        ) from e
+    return coords["y"], coords["x"]
+
+
 @cache
 def geocode_census_zip(
     session: Session, addr: str, zipcode: str
@@ -66,20 +84,11 @@ def geocode_census_zip(
         session: requests session to use for http calls
         addr: the US address to look up
         zipcode: the zipcode within which to look
-
     Returns:
         lat, lon of address as known by census.gov
 
     """
-    raw = session.get(
-        f"{CENSUS_PATH}?street={addr}&zip={zipcode}&benchmark=2020&format=json",
-        timeout=30,
-    ).json()
-    try:
-        coords = raw["result"]["addressMatches"][0]["coordinates"]
-    except IndexError as e:
-        raise ValueError(f"Address {addr} not found at {zipcode}") from e
-    return coords["y"], coords["x"]
+    return _geocode_census_kwargs(session, street=addr, zip=zipcode)
 
 
 @cache
@@ -96,16 +105,7 @@ def geocode_census_city_state(
         lat, lon of address as known by census.gov
 
     """
-    raw = session.get(
-        f"{CENSUS_PATH}?street={addr}&city={city}&state={state}"
-        f"&benchmark=2020&format=json",
-        timeout=30,
-    ).json()
-    try:
-        coords = raw["result"]["addressMatches"][0]["coordinates"]
-    except IndexError as e:
-        raise ValueError(f"Address {addr} not found at {city}, {state}") from e
-    return coords["y"], coords["x"]
+    return _geocode_census_kwargs(session, street=addr, city=city, state=state)
 
 
 def _get_local_nominatim() -> Nominatim:
@@ -121,32 +121,85 @@ def _get_local_nominatim() -> Nominatim:
 
 @cache
 def tryhard_geocode(
-    session: Session, addr: str, zipcode: str, city: str, state: str
-) -> tuple[float, float]:
+    session: Session,
+    dealer_name: str,
+    addr: str,
+    zipcode: str,
+    city: str,
+    state: str,
+) -> tuple[float, float, int]:
+    """
+    Attempts to geocode a given US address using multiple sources in order of
+    decreasing quality and increasing chance of success.
+
+    Args:
+        session:
+        dealer_name:
+        addr:
+        zipcode:
+        city:
+        state:
+
+    Returns:
+        lat: float
+        lon: float
+        qc: int, solution quality; higher is better
+    """
 
     with connect(CAR_DB) as conn:
         rows = conn.execute(
-            f""" SELECT lat, lon FROM dealerships
-                 WHERE address = ? AND zip = ?
+            f""" SELECT lat, lon, ll_qual FROM dealerships
+                 WHERE address = ? AND zip = ? AND name = ?
             """,
-            [addr, zipcode],
+            [addr, zipcode, dealer_name],
         ).fetchall()
     if rows:
-        return rows[0][0], rows[0][1]
+        ll_qc = rows[0][2]
+        if ll_qc > 0:
+            return rows[0]
 
     try:
-        return geocode_census_zip(session, addr, zipcode)
+        lat, lon = geocode_census_zip(session, addr, zipcode)
+        ll_qc = 1000
+
     except ValueError:
         try:
-            return geocode_census_city_state(session, addr, city, state)
+            lat, lon = geocode_census_city_state(session, addr, city, state)
+            ll_qc = 1000
         except ValueError:
+            # TODO redo as loop over some order of query preferences and qualities
             geo = _get_local_nominatim().geocode(
-                query=dict(street=addr, postalcode=zipcode)
+                query=dict(
+                    street=addr, city=city, postalcode=zipcode, state=state
+                )
             )
+            ll_qc = 500
             if geo is None:
+                # sometimes the zipcode is wrong...
                 geo = _get_local_nominatim().geocode(
                     query=dict(street=addr, city=city, state=state)
                 )
-            if geo is not None:
-                return geo.latitude, geo.longitude
-            raise ValueError("Could not geocode despite best efforts.")
+                ll_qc = 400
+            if geo is None:
+                # ... and sometimes the city is wrong
+                geo = _get_local_nominatim().geocode(
+                    query=dict(street=addr, zipcode=zipcode, state=state)
+                )
+                ll_qc = 400
+            if geo is None:
+                geo = _get_local_nominatim().geocode(
+                    query=dict(city=city, state=state, postalcode=zipcode)
+                )
+                ll_qc = 100
+            if geo is None:
+                geo = _get_local_nominatim().geocode(
+                    query=dict(postalcode=zipcode)
+                )
+                ll_qc = 25
+
+            if geo is None:
+                raise ValueError("Could not geocode despite best efforts.")
+
+            lat, lon = geo.latitude, geo.longitude
+
+    return lat, lon, ll_qc

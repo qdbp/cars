@@ -41,7 +41,7 @@ def load_listings_preindexer() -> DataFrame:
         listings = pd.read_sql_query(
             f"""
             SELECT vin, dealer_id, price, mileage
-            FROM truecar_listings tl
+            FROM listings tl
             """,
             conn,
         )
@@ -54,7 +54,7 @@ def load_attrs() -> DataFrame:
         out = pd.read_sql(
             f"""
             SELECT 
-                year, make, model, style, trim_slug, style,
+                id, year, make, model, style, trim_slug, style,
                 (0.45 * mpg_hwy + 0.55 * mpg_city) as mpg,
                 fuel_type, body, drivetrain, is_auto
             FROM ymms_attrs
@@ -70,10 +70,10 @@ def load_all_dealers() -> DataFrame:
     with sql.connect(CAR_DB) as conn:
         out = pd.read_sql(
             """
-            SELECT * FROM truecar_dealerships
+            SELECT * FROM dealerships
             """,
             conn,
-            index_col="dealer_id",
+            index_col="id",
         )
         out.rename(dict(name="dealer_name"), axis=1, inplace=True)
         out.sort_index(inplace=True)
@@ -93,7 +93,7 @@ MMS: list[Tuple[str, str]]
 
 
 class RawClientData(TypedDict):
-    attrs: list[Tuple[int, str, str, str, bool, str, str, str]]
+    attrs: list[Tuple[int, int, str, str, str, bool, str, str, str]]
     prop_to_ix: dict[str, dict[Union[str, int], int]]
 
 
@@ -128,9 +128,8 @@ def refresh_universe() -> None:
 
     ZIP_DEALER_DISTANCE.clear()
 
-    # need this form to prevent autoflake from misbehaving
     # globals()["LISTINGS_PREINDEXER"] = load_listings_preindexer()
-    globals()["DEALERS"] = load_all_dealers()
+    DEALERS = load_all_dealers()
     ATTRS = load_attrs()
     # low effort write protection -- just to catch stupid mistakes
 
@@ -140,6 +139,7 @@ def refresh_universe() -> None:
             .loc[
                 :,
                 [
+                    "id",
                     "year",
                     "make",
                     "model",

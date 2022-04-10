@@ -1,4 +1,3 @@
-import numba
 import numpy as np
 from scipy.interpolate import InterpolatedUnivariateSpline
 
@@ -82,7 +81,6 @@ class CostModel:
         return int(base * CostModel.cost_75_by_make(make))
 
     @staticmethod
-    @numba.jit  # type: ignore
     def gas_cost(
         mpg_city: float,
         mpg_highway: float,

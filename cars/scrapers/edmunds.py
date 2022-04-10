@@ -26,9 +26,12 @@ BASE_URL = "https://www.edmunds.com"
 SESSION: Session
 
 
-def edmunds_resolve_latlon(da_dict: dict[str, Any]) -> tuple[float, float]:
+def edmunds_resolve_latlon(
+    dealer_name: str, da_dict: dict[str, Any]
+) -> tuple[float, float]:
     return tryhard_geocode(
         SESSION,
+        dealer_name,
         da_dict["street"],
         da_dict["zip"],
         state=da_dict["state"],
@@ -53,7 +56,7 @@ def parse_edmunds_listing(
     da_dict["street"] = normalize_address(da_dict["street"])
 
     try:
-        lat, lon = edmunds_resolve_latlon(da_dict)
+        lat, lon = edmunds_resolve_latlon(dd["name"], da_dict)
     except ValueError:
         return None
 

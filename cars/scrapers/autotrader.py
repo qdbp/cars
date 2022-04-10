@@ -11,7 +11,7 @@ from typing import Any, ClassVar, Generator
 
 from py9lib.io_ import ratelimit
 from py9lib.util import suppress
-from requests import ReadTimeout, Session
+from requests import ConnectTimeout, ReadTimeout, Session
 
 from cars import LOG
 from cars.analysis.geo import tryhard_geocode
@@ -79,8 +79,13 @@ def handle_listing(
     dld = od["location"]["address"]
     dld["address1"] = normalize_address(dld["address1"])
     try:
-        lat, lon = tryhard_geocode(
-            session, dld["address1"], dld["zip"], dld["city"], dld["state"]
+        lat, lon, ll_qual = tryhard_geocode(
+            session,
+            od["name"],
+            dld["address1"],
+            dld["zip"],
+            dld["city"],
+            dld["state"],
         )
     except ValueError:
         return None
@@ -95,6 +100,7 @@ def handle_listing(
         lon=round(lon, 6),
         phone=od.get("phone", {}).get("value"),
         website=None,
+        ll_qual=ll_qual,
     )
 
     mpgs = re.findall(r"([0-9]+) .*?([0-9]+)", spec["mpg"]["value"])[0]
@@ -176,7 +182,7 @@ class AutotraderState(ScraperState):
 
 @inject_state(
     AutotraderState,
-    catch=[TimeoutError, ReadTimeout],
+    catch=[ConnectTimeout, TimeoutError, ReadTimeout],
     backoff_start=10,
     backoff_rate=10,
     log_fun=LOG.error,

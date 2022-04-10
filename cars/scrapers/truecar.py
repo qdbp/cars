@@ -12,7 +12,7 @@ from typing import ClassVar, Iterable, Literal
 from urllib.parse import urlencode
 
 from py9lib.io_ import ratelimit
-from requests import ReadTimeout, Session
+from requests import ConnectTimeout, ReadTimeout, Session
 
 from cars import LOG
 from cars.scrapers import (
@@ -30,6 +30,7 @@ from cars.scrapers import (
 from cars.util import CAR_DB
 
 SOURCE_NAME = "truecar"
+TRUECAR_LL_QUAL = 200
 
 
 @dataclass
@@ -145,6 +146,7 @@ def get_listings_shard_sqlite(
                 state=loc["state"],
                 phone=None,  # TODO check if we're just missing this
                 website=dealer_dict["links"]["website_link"],
+                ll_qual=TRUECAR_LL_QUAL,
             )
             ymms_attr = YMMSAttr(
                 year=vehicle["year"],
@@ -192,7 +194,7 @@ def get_listings_shard_sqlite(
 
 @inject_state(
     TruecarState,
-    catch=[TimeoutError, ReadTimeout],
+    catch=[ConnectTimeout, TimeoutError, ReadTimeout],
     backoff_start=10,
     backoff_rate=10,
     log_fun=LOG.error,

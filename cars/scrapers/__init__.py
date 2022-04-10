@@ -198,11 +198,12 @@ class Dealership:
     lon: float
     phone: str | None
     website: str | None
+    ll_qual: int = 0
 
     def insert(self, conn: Connection) -> int:
         dd = asdict(self)
         row = conn.execute(
-            """ SELECT id FROM dealerships
+            """ SELECT id, ll_qual FROM dealerships
                 WHERE address = :address
                   AND zip = :zip
                   AND name = :name""",
@@ -213,7 +214,11 @@ class Dealership:
                 """ UPDATE dealerships
                     SET
                         website = coalesce(:website, website),
-                        phone = coalesce(:phone, phone)
+                        phone = coalesce(:phone, phone),
+                    -- if we have improved our geocoding quality, we update the latlon
+                        lat = iif(ll_qual < :ll_qual, :lat, lat),
+                        lon = iif(ll_qual < :ll_qual, :lon, lon),
+                        ll_qual = iif(ll_qual < :ll_qual, :ll_qual, ll_qual)
                     WHERE
                         address = :address AND zip = :zip AND name = :name""",
                 dd,
