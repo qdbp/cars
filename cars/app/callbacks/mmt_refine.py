@@ -3,11 +3,11 @@ from collections import defaultdict
 from functools import reduce
 from typing import Any
 
+import dash.html as html
 import dash_bootstrap_components as dbc
-import dash_html_components as html
 from dash import dependencies as dd
 from dash.development.base_component import Component
-from dash_html_components import Div
+from dash.html import Div
 
 from cars.app import PERSIST_ARGS
 from cars.app.layout import (
@@ -28,10 +28,6 @@ INPID_MMT_DISABLE = "mmt-disable-trim"
 
 INPID_MMT_REFINE_TRIM = "mmt-refine-trim"
 INPID_MMT_REFINE_YEAR = "mmt-refine-year"
-
-
-def mk_trim_toggle(make: str, model: str, trim: str) -> Component:
-    return Div(className="mmt-toggle", children=[])
 
 
 def mk_trim_row_header(make: str, model: str, trim: str) -> Div:
@@ -178,4 +174,6 @@ __all__ = [
     "generate_mmt_refinement_cards",
     "INPID_MMT_CHECK",
     "INPID_MMT_DISABLE",
+    "INPID_MMT_REFINE_TRIM",
+    "INPID_MMT_REFINE_YEAR",
 ]

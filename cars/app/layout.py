@@ -1,20 +1,13 @@
 from typing import Iterable
 
 import dash
+import dash.html as html
 import dash_bootstrap_components as dbc
-import dash_html_components as html
 from dash import Dash
 from dash import dependencies as dd
+from dash.dcc import Dropdown, Graph, Interval, RangeSlider, Slider, Store
 from dash.dependencies import ALL, MATCH, Input, Output, State
-from dash_core_components import (
-    Dropdown,
-    Graph,
-    Interval,
-    RangeSlider,
-    Slider,
-    Store,
-)
-from dash_html_components import Div
+from dash.html import Div
 
 from cars import LOG
 from cars import scrapers as scr
@@ -98,7 +91,6 @@ class ToggleButtonGroup:
     """
 
     TYPE_SELECTOR = "_btn_type"
-    KEY_SELECTOR = "key"
 
     HAVE_CALLBACKS: set[tuple[str, ...]] = set()
 
@@ -181,7 +173,6 @@ class ToggleButtonGroup:
         cls.HAVE_CALLBACKS.add(selector_keys)
 
         no_key = {sel: MATCH for sel in selector_keys}
-        key_match = dict(**no_key, key=MATCH)
         key_all = dict(**no_key, key=ALL)
 
         deferred_clientside_callback(
@@ -287,10 +278,11 @@ def setup_dash_layout(app: Dash, sk: DivSkeleton) -> dash.Dash:
     ]:
         slider_height = 460
         year_slider = RangeSlider(
-            INPID_YEAR,
-            min=(mn := etl.ATTRS.index.get_level_values("year").min()),
-            max=(mx := etl.ATTRS.index.get_level_values("year").max()),
-            value=[2012, 2018],
+            id=INPID_YEAR,
+            min=(mn := etl.ATTRS["year"].min()),
+            max=(mx := etl.ATTRS["year"].max()),
+            step=1,
+            value=[2015, 2020],
             marks={y: str(y) for y in range(mn, mx + 1)},
             vertical=True,
             verticalHeight=slider_height,
@@ -298,7 +290,7 @@ def setup_dash_layout(app: Dash, sk: DivSkeleton) -> dash.Dash:
             **PERSIST_ARGS,
         )
         mileage_slider = RangeSlider(
-            INPID_MILEAGE,
+            id=INPID_MILEAGE,
             min=0,
             max=etl.MAX_MILEAGE,
             value=[10000, 70000],
@@ -312,7 +304,7 @@ def setup_dash_layout(app: Dash, sk: DivSkeleton) -> dash.Dash:
             **PERSIST_ARGS,
         )
         price_slider = RangeSlider(
-            INPID_PRICE,
+            id=INPID_PRICE,
             min=0,
             max=etl.MAX_PRICE,
             value=[10000, 35000],
@@ -326,7 +318,7 @@ def setup_dash_layout(app: Dash, sk: DivSkeleton) -> dash.Dash:
             **PERSIST_ARGS,
         )
         mpg_slider = RangeSlider(
-            INPID_MPG,
+            id=INPID_MPG,
             min=etl.ATTRS["mpg"].min(),
             max=(mx := etl.ATTRS["mpg"].max()),
             value=[20, mx],
@@ -398,7 +390,7 @@ def setup_dash_layout(app: Dash, sk: DivSkeleton) -> dash.Dash:
                     "Plot does not refresh automatically.", color="light"
                 ),
             ],
-            style={"display": "flex", "flex-direction": "column-reverse"},
+            style={"display": "flex", "flexDirection": "column-reverse"},
         ),
     ]
     ## car options pickers

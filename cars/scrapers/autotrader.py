@@ -108,11 +108,8 @@ def handle_listing(
         year=ld["year"],
         make=ld["make"],
         model=ld["model"],
-        # yes, this is a fucking mess. ¯\_(ツ)_/¯
-        # some duplication in ymms_attr is acceptable, it only leads to slowdown
-        # not unsoundness
-        trim_slug=(trim := ld["style"][0]).lower(),
-        style=ld.get("trim", trim),
+        style=ld.get("trim", ""),
+        trim_slug=ld.get("trim", "").lower().replace(" ", "-"),
         is_auto=spec["transmission"]["value"] == "Automatic",
         drivetrain=spec["driveType"]["value"],
         mpg_city=int(mpgs[0]),

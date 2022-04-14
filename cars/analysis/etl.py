@@ -4,6 +4,7 @@ import os
 import sqlite3 as sql
 from functools import lru_cache
 from gc import collect
+from time import time
 from typing import Iterable, Mapping, Set, Tuple, TypedDict, TypeVar, Union
 
 import pandas as pd
@@ -58,11 +59,14 @@ def load_attrs() -> DataFrame:
                 (0.45 * mpg_hwy + 0.55 * mpg_city) as mpg,
                 fuel_type, body, drivetrain, is_auto
             FROM ymms_attrs
+            -- TODO integrate autotrader data properly -- needs ymms standardization
+            WHERE source = 'truecar'
             """,
             conn,
-            index_col=["year", "make", "model", "trim_slug"],
+            index_col=["id"],
         )
         out.sort_index(inplace=True)
+        out.index.name = "ymms_id"
         return out
 
 
@@ -71,6 +75,7 @@ def load_all_dealers() -> DataFrame:
         out = pd.read_sql(
             """
             SELECT * FROM dealerships
+            WHERE ll_qual > 0
             """,
             conn,
             index_col="id",
@@ -139,7 +144,7 @@ def refresh_universe() -> None:
             .loc[
                 :,
                 [
-                    "id",
+                    "ymms_id",
                     "year",
                     "make",
                     "model",
@@ -255,15 +260,16 @@ def get_specific_cars(ymmts: Iterable[Tuple[int, str, str, str]]) -> DataFrame:
 
 # noinspection SqlResolve
 def query_listings(
-    ymms_selector: DataFrame,
+    ymms_ids: DataFrame,
     dealer_ids: DataFrame,
     min_miles: int,
     max_miles: int,
     min_price: float,
     max_price: float,
+    max_last_seen_ago_days: int = 3,
 ) -> DataFrame:
 
-    assert ymms_selector.shape[1] == 4
+    assert ymms_ids.shape[1] == 1
     assert dealer_ids.shape[1] == 1
 
     assert isinstance(min_miles, (float, int))
@@ -276,15 +282,11 @@ def query_listings(
             # language=sql
             """
             CREATE TEMP TABLE q_dealer (
-                dealer_id INTEGER PRIMARY KEY 
-            );
+                id INTEGER PRIMARY KEY 
+            ) WITHOUT ROWID;
             CREATE TEMP TABLE q_ymms (
-                year INTEGER,
-                make TEXT,
-                model TEXT,
-                style TEXT,
-                PRIMARY KEY (year, make, model, style)
-            ) WITHOUT ROWID ;
+                id INTEGER PRIMARY KEY
+            ) WITHOUT ROWID;
             """
         )
         conn.executemany(
@@ -295,23 +297,26 @@ def query_listings(
         )
         conn.executemany(
             """
-            INSERT INTO q_ymms VALUES  (?, ?, ?, ?)
+            INSERT INTO q_ymms VALUES  (?)
             """,
-            ymms_selector.values,
+            ymms_ids.values,
         )
 
         sel_listings = pd.read_sql(
             f"""
-                SELECT * FROM (
-                    truecar_listings
-                    NATURAL JOIN q_ymms
-                    NATURAL JOIN q_dealer
+                SELECT listings.* FROM (
+                    listings
+                    INNER JOIN q_ymms ON q_ymms.id = listings.ymms_id
+                    INNER JOIN q_dealer ON q_dealer.id = listings.dealer_id
                 )
                 WHERE 
                     mileage >= :min_miles
                 AND mileage <= :max_miles
                 AND price >= :min_price
                 AND price <= :max_price
+                AND last_seen >= :last_seen_cutoff
+                -- TODO incorporate autotrader -- needs VIN dedup displayside
+                AND source = 'truecar'
                 LIMIT :limit
                 """,
             conn,
@@ -322,6 +327,8 @@ def query_listings(
                     max_miles=max_miles,
                     min_miles=min_miles,
                     limit=LISTING_LIMIT,
+                    last_seen_cutoff=int(time())
+                    - 86400 * max_last_seen_ago_days,
                 )
             ),
         )

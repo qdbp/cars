@@ -169,20 +169,31 @@ class YMMSAttr:
 
     def insert(self, conn: Connection) -> int:
         yd = asdict(self)
-        row = conn.execute(
-            """ SELECT id FROM ymms_attrs
+        rows = conn.execute(
+            """ SELECT id, source FROM ymms_attrs
                 WHERE year = :year
                   AND make = :make
                   AND model = :model
-                  AND style = :style""",
+                  AND style = :style
+            """,
             yd,
         ).fetchall()
-        if row:
-            return row[0][0]
+
+        if row := rows[0]:
+            if row[1] is None:
+                conn.execute(
+                    # language=sql
+                    """ UPDATE ymms_attrs
+                        SET source = :source
+                        WHERE id = :id
+                    """,
+                    dict(id=row[0], source=self.source),
+                )
+            return row[0]
         else:
             # language=sql
             cur = conn.execute(
-                f"INSERT INTO ymms_attrs {mk_column_spec(yd)}", yd
+                f"INSERT OR REPLACE INTO ymms_attrs {mk_column_spec(yd)}", yd
             )
             return cur.lastrowid
 

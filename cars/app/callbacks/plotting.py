@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import Any, Tuple, Union
 
-import dash_html_components as html
+import dash.html as html
 import pandas as pd
 from dash import dependencies as dd
+from dash.dcc import Graph
 from dash.dependencies import ALL, Input, Output
 from dash.development.base_component import Component
-from dash_core_components import Graph
 from numpy import uint64
 from pandas import DataFrame
 from plotly import graph_objects as go
@@ -105,7 +105,6 @@ def plot_listings(listings: DataFrame) -> Graph:
                     "year",
                     "price",
                     "drivetrain",
-                    "engine",
                 ]
             ],
             hoverlabel=dict(bgcolor="#F8F5F0"),
@@ -116,15 +115,16 @@ def plot_listings(listings: DataFrame) -> Graph:
                 "%{customdata[7]} %{customdata[1]} "
                 "%{customdata[2]} %{customdata[3]}"
                 "</b><br>"
-                "<i>%{customdata[9]} - %{customdata[10]}</b><br>"
+                "<i>%{customdata[9]}</b><br>"
                 "Dealer: %{customdata[5]}<br>"
                 "<b>About %{customdata[6]:.0f} miles from you.</b>"
                 "<extra></extra>"
             ),
             marker=dict(
-                color=listings["color_rgb"].fillna("#000000"),
+                color=listings["color_rgb_ext"].fillna("#000000"),
                 opacity=1
-                - 0.75 * listings["color_rgb"].transform(pd.isna).astype(int),
+                - 0.75
+                * listings["color_rgb_ext"].transform(pd.isna).astype(int),
                 size=10,
                 line=dict(width=0),
             ),
@@ -254,7 +254,7 @@ def generate_filtered_graph(
     attrs = pd.merge(cross, DataFrame(filtered_attrs), on=ymmt)
 
     lst = etl.query_listings(
-        attrs[ymms],
+        attrs[["ymms_id"]],
         dealers.reset_index()[["dealer_id"]],
         *lim_mileage,
         *lim_price,
@@ -280,9 +280,10 @@ def generate_filtered_graph(
         color = "warning"
         hidden = False
 
-    lst = pd.merge(lst, attrs, on=ymms)
+    lst = pd.merge(lst, attrs, on=["ymms_id"])
     lst = pd.merge(lst, dealers, on=["dealer_id"])
-    lst["color_rgb"] = "#" + lst["color_rgb"]
+    lst.drop(["ymms_id", "dealer_id"], axis=1, inplace=True)
+    lst["color_rgb_ext"] = "#" + lst["color_rgb_ext"]
 
     plot: Graph = plot_listings(lst.reset_index())
 

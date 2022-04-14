@@ -1,8 +1,8 @@
 from typing import Any
 
-import dash_html_components as html
+import dash.html as html
 from dash.development.base_component import Component
-from dash_html_components import Div
+from dash.html import Div
 
 SK_DIV_ID_PREFIX = "_sk_div"
 CLASSNAME_SK_DIV = "sk_div"

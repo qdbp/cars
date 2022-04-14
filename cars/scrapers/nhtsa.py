@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 NHTSA_BATCH_DECODE_URL = (
     "https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVINValuesBatch/"
 )
 NHTSA_VIN_DECODE_URL = (
     "https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/{}?format={}"
 )
+
+
+@dataclass
+class NHTSAAttr:
+    year: int
+    make: str
+    model: str
+    series: str
+
 
 # these have non-null ratios of over 10% in the dataset aggregated by models
 # and are not otherwise redundant or useless
