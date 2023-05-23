@@ -6,7 +6,7 @@ dash-bootstrap-components==0.10.7
 # scraper
 webcolors==1.11.1
 bitstruct==8.13.0
-requests==2.27.1
+requests==2.31.0
 selenium-wire==4.6.3
 
 # libs: general
